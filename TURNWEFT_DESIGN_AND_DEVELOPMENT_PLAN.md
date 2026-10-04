@@ -2,7 +2,7 @@
 
 > 文档版本：0.4 · 设计与开发计划。0.2 写入用户对首轮评审三项问题的决定；0.3 写入 Codex / Grok 交叉评审的收敛结论与 U14、U15；0.4 写入 M0 实测结论（权威记录：`docs/m0/M0_RESULTS.md`）。评审记录见 `TURNWEFT_DESIGN_REVIEW_2026-10-03.md`。  
 > 编写日期：2026-10-04 UTC（本机时区为 2026-10-03）  
-> 当前状态：0.1.0-alpha 已实现，五个 Agent × CC / Codex 两个宿主均有实测记录（`docs/e2e/E2E_RESULTS.md`）；开源发布见 U20。  
+> 当前状态：0.1.0-alpha.0 已开源发布（2026-10-04）：GitHub `handong66/turnweft`（MIT），npm `turnweft`（latest）。五个 Agent × CC / Codex 两个宿主均有实测记录（`docs/e2e/E2E_RESULTS.md`）；发布方式见 U20。  
 > 阅读对象：不掌握此前聊天上下文的架构评审者、实现 Agent 和维护者。
 
 ## 0. 如何阅读和评审这份文档
