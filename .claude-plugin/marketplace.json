@@ -1,0 +1,11 @@
+{
+  "name": "turnweft",
+  "owner": { "name": "handong66" },
+  "plugins": [
+    {
+      "name": "turnweft",
+      "source": "./plugins/claude-code",
+      "description": "Persistent agent collaboration for Claude Code: Dim, Droid, Grok, OpenCode, agy."
+    }
+  ]
+}

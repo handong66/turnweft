@@ -1,0 +1,61 @@
+{
+  "name": "turnweft",
+  "version": "0.1.0-alpha.0",
+  "description": "Persistent agent sessions for Claude Code and Codex: delegate to Dim, Droid, Grok, OpenCode and agy in your real project.",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "mcp",
+    "acp",
+    "agent",
+    "coding-agent",
+    "delegation",
+    "droid",
+    "opencode",
+    "grok"
+  ],
+  "homepage": "https://github.com/handong66/turnweft#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/handong66/turnweft.git"
+  },
+  "bugs": {
+    "url": "https://github.com/handong66/turnweft/issues"
+  },
+  "author": "handong66",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "turnweft": "dist/cli/main.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/cli/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test --test-concurrency=1 'dist/tests/*.test.js'",
+    "clean": "rm -rf dist",
+    "prepare": "npm run build",
+    "sync-launcher": "node scripts/sync-launcher.mjs"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^1.7.0",
+    "@modelcontextprotocol/sdk": "^1.32.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2"
+  },
+  "files": [
+    "dist",
+    "!dist/tests",
+    "plugins",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "os": [
+    "darwin"
+  ]
+}

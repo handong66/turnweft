@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "turnweft": {
+      "title": "Turnweft",
+      "description": "Persistent sessions for dim, droid, grok, opencode and agy.",
+      "cwd": ".",
+      "command": "node",
+      "args": ["./launcher.mjs"],
+      "env_vars": ["PATH", "HOME", "TURNWEFT_BIN", "TURNWEFT_HOME", "NVM_DIR", "VOLTA_HOME"]
+    }
+  }
+}

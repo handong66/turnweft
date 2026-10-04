@@ -1,0 +1,279 @@
+[
+  {
+    "provider": "dim",
+    "intent": "analyze",
+    "mode": "default",
+    "config": "missing",
+    "tier": "read-only",
+    "excess": [],
+    "digest": "6d6e0f9bbc4cb49f6df23a621845029aa8f7924d967ba0c5223a841835cabae2"
+  },
+  {
+    "provider": "dim",
+    "intent": "implement",
+    "mode": "default",
+    "config": "missing",
+    "tier": "workspace-write",
+    "excess": [
+      "Dim workspace-write：git 操作不经逐次确认",
+      "Turnweft 会自动批准 Dim 的编辑和命令请求，不区分命令是否联网"
+    ],
+    "digest": "1a19d92ef18e47412241f95a9449520b1bd8cf5b9b97763bdef426ed57a1a343"
+  },
+  {
+    "provider": "droid",
+    "intent": "analyze",
+    "mode": "default",
+    "config": "missing",
+    "tier": "normal+callback-readonly",
+    "excess": [],
+    "digest": "d5e4f864a4ffcdcc44a70254c21dce31dc6d44666e83bbb01befdd5a5a7541bd"
+  },
+  {
+    "provider": "droid",
+    "intent": "implement",
+    "mode": "default",
+    "config": "missing",
+    "tier": "normal+callback",
+    "excess": [
+      "Turnweft 会自动批准 Droid 的编辑和命令请求，不区分命令是否联网"
+    ],
+    "digest": "eac24dcae0fa5d9eb5edb45cfd3e45abb0e3e36be8c895d1a968a65d96095d63"
+  },
+  {
+    "provider": "grok",
+    "intent": "analyze",
+    "mode": "default",
+    "config": "missing",
+    "tier": "config:default+callback-readonly",
+    "excess": [
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 default"
+    ],
+    "digest": "34f16491c9c546af1eea8937febbbcd12c865df93ac0cab17c84841f99f664c7"
+  },
+  {
+    "provider": "grok",
+    "intent": "implement",
+    "mode": "default",
+    "config": "missing",
+    "tier": "config:default+callback",
+    "excess": [
+      "Turnweft 会自动批准 Grok 的编辑和命令请求，不区分命令是否联网",
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 default"
+    ],
+    "digest": "0b31c325408d9e0b0ca59efe2a21f45a0b8eb28e554bf081e9b80c67bfba137b"
+  },
+  {
+    "provider": "opencode",
+    "intent": "analyze",
+    "mode": "default",
+    "config": "missing",
+    "tier": "plan+callback-readonly",
+    "excess": [],
+    "digest": "62b94073b3251951355539997b131a1e1e0387695afab9978d748f2d568ea802"
+  },
+  {
+    "provider": "opencode",
+    "intent": "implement",
+    "mode": "default",
+    "config": "missing",
+    "tier": "build+config:default",
+    "excess": [
+      "OpenCode 按其自身权限配置运行：未找到 OpenCode 配置，按默认规则：编辑和命令不经询问（含联网）",
+      "Turnweft 只应答 OpenCode 主动发来的权限请求，无法读回它实际生效的权限规则"
+    ],
+    "digest": "c73537de657bdddb1b305952d54dd36b599724a5014b4b5be839bab5fd0a8765"
+  },
+  {
+    "provider": "agy",
+    "intent": "analyze",
+    "mode": "default",
+    "config": "missing",
+    "tier": "request-review",
+    "excess": [],
+    "digest": "a8267bf634c9593896c5b31e3963dcb202211ab2bcbc5358ecc1ec5f62e54a90"
+  },
+  {
+    "provider": "agy",
+    "intent": "implement",
+    "mode": "default",
+    "config": "missing",
+    "tier": "skip-permissions+accept-edits",
+    "excess": [
+      "agy 跳过权限检查：所有工具调用（含命令和联网）不经确认"
+    ],
+    "digest": "cfa867efdc3f7c22a0a03cac0a0d219f41d7fd5877fd5165e7090fbb6022de84"
+  },
+  {
+    "provider": "opencode",
+    "intent": "implement",
+    "mode": "default",
+    "config": "empty",
+    "tier": "build+config:default",
+    "excess": [
+      "OpenCode 按其自身权限配置运行：你的配置未设置 permission，编辑和命令默认不经询问（含联网）",
+      "Turnweft 只应答 OpenCode 主动发来的权限请求，无法读回它实际生效的权限规则"
+    ],
+    "digest": "f3b78cb92fd31b64c6b6f60aff6ca64fc6292348f021b954599d99da26214762"
+  },
+  {
+    "provider": "opencode",
+    "intent": "implement",
+    "mode": "default",
+    "config": "explicit",
+    "tier": "build+config:a6df6e5b",
+    "excess": [
+      "OpenCode 按其自身权限配置运行：你的配置 permission={\"edit\":\"ask\",\"bash\":\"deny\"}",
+      "Turnweft 只应答 OpenCode 主动发来的权限请求，无法读回它实际生效的权限规则"
+    ],
+    "digest": "62ac9572bad3d002cb30fdc3ebd737edce94c531df76281d87b17d3bfd92ab5a"
+  },
+  {
+    "provider": "grok",
+    "intent": "analyze",
+    "mode": "always-approve",
+    "config": "missing",
+    "tier": "user-config:always-approve",
+    "excess": [
+      "你的 Grok 配置 permission_mode=always-approve：所有工具调用（含命令和联网）不经确认",
+      "无法限制为只读：Grok 可能修改文件",
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 always-approve"
+    ],
+    "digest": "82dcf0cf6dd8a0f6843257214af2b20c6a323fa5c05afaba8128506d1b3f4680"
+  },
+  {
+    "provider": "grok",
+    "intent": "implement",
+    "mode": "always-approve",
+    "config": "missing",
+    "tier": "user-config:always-approve",
+    "excess": [
+      "你的 Grok 配置 permission_mode=always-approve：所有工具调用（含命令和联网）不经确认",
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 always-approve"
+    ],
+    "digest": "f6efc516f579b28018a07aacaccb409ba766b675b861d6410af441dadbf27782"
+  },
+  {
+    "provider": "grok",
+    "intent": "analyze",
+    "mode": "bypassPermissions",
+    "config": "missing",
+    "tier": "user-config:bypassPermissions",
+    "excess": [
+      "你的 Grok 配置 permission_mode=bypassPermissions：所有工具调用（含命令和联网）不经确认",
+      "无法限制为只读：Grok 可能修改文件",
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 bypassPermissions"
+    ],
+    "digest": "7aa15fbca4a95e172576cb5e83b67c3d571062e0427c3506d5c7f22d888811b8"
+  },
+  {
+    "provider": "grok",
+    "intent": "implement",
+    "mode": "bypassPermissions",
+    "config": "missing",
+    "tier": "user-config:bypassPermissions",
+    "excess": [
+      "你的 Grok 配置 permission_mode=bypassPermissions：所有工具调用（含命令和联网）不经确认",
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 bypassPermissions"
+    ],
+    "digest": "a9c309fc7ea2e6feff01437f1909ece1d2f5a0278e416a6f24b1d8e17021c615"
+  },
+  {
+    "provider": "grok",
+    "intent": "analyze",
+    "mode": "bypass-permissions",
+    "config": "missing",
+    "tier": "user-config:bypass-permissions",
+    "excess": [
+      "你的 Grok 配置 permission_mode=bypass-permissions：所有工具调用（含命令和联网）不经确认",
+      "无法限制为只读：Grok 可能修改文件",
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 bypass-permissions"
+    ],
+    "digest": "4c096d5fb095a9d2c1f41031ea7e97d01bd967f3d3813a5f6a5197e3eccee29a"
+  },
+  {
+    "provider": "grok",
+    "intent": "implement",
+    "mode": "bypass-permissions",
+    "config": "missing",
+    "tier": "user-config:bypass-permissions",
+    "excess": [
+      "你的 Grok 配置 permission_mode=bypass-permissions：所有工具调用（含命令和联网）不经确认",
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 bypass-permissions"
+    ],
+    "digest": "f7825b0075d9432898e75cb2148a896f0cca7af6be4effd5293836e3eda44ad2"
+  },
+  {
+    "provider": "grok",
+    "intent": "analyze",
+    "mode": "dontAsk",
+    "config": "missing",
+    "tier": "user-config:dontAsk",
+    "excess": [
+      "你的 Grok 配置 permission_mode=dontAsk：所有工具调用（含命令和联网）不经确认",
+      "无法限制为只读：Grok 可能修改文件",
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 dontAsk"
+    ],
+    "digest": "033053872a55d02e055fd28d62437e9b6dd0236cb9625c527f119d8653faeae1"
+  },
+  {
+    "provider": "grok",
+    "intent": "implement",
+    "mode": "dontAsk",
+    "config": "missing",
+    "tier": "user-config:dontAsk",
+    "excess": [
+      "你的 Grok 配置 permission_mode=dontAsk：所有工具调用（含命令和联网）不经确认",
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 dontAsk"
+    ],
+    "digest": "ecaf9a984ac9b1107c898f7bbf5fda4d358b6e3576734029a124fcd66eca8a74"
+  },
+  {
+    "provider": "grok",
+    "intent": "analyze",
+    "mode": "auto",
+    "config": "missing",
+    "tier": "user-config:auto",
+    "excess": [
+      "你的 Grok 配置 permission_mode=auto：所有工具调用（含命令和联网）不经确认",
+      "无法限制为只读：Grok 可能修改文件",
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 auto"
+    ],
+    "digest": "d2279612aac09a666262e29ec74848a04079907f89340edce71a771f70b30d8d"
+  },
+  {
+    "provider": "grok",
+    "intent": "implement",
+    "mode": "auto",
+    "config": "missing",
+    "tier": "user-config:auto",
+    "excess": [
+      "你的 Grok 配置 permission_mode=auto：所有工具调用（含命令和联网）不经确认",
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 auto"
+    ],
+    "digest": "1d1edc6eb437883fa1958e3352b7b10e82d3f69765b1485cfba3e57e1804aa9f"
+  },
+  {
+    "provider": "grok",
+    "intent": "analyze",
+    "mode": "custom",
+    "config": "missing",
+    "tier": "config:custom+callback-readonly",
+    "excess": [
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 custom"
+    ],
+    "digest": "77400d490b97c4d66d3b53edd7516d6c6da6d8010eaf6c0889381d86075668d5"
+  },
+  {
+    "provider": "grok",
+    "intent": "implement",
+    "mode": "custom",
+    "config": "missing",
+    "tier": "config:custom+callback",
+    "excess": [
+      "Turnweft 会自动批准 Grok 的编辑和命令请求，不区分命令是否联网",
+      "Turnweft 无法读回 Grok 的实际权限模式；按 ~/.grok/config.toml 判断为 custom"
+    ],
+    "digest": "7fa5c27a979fc8a6c19418ad24044c35ebf0bc699ac60da2bd0b14c3fd32431a"
+  }
+]

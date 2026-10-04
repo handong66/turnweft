@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "turnweft": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/launcher.mjs"]
+    }
+  }
+}

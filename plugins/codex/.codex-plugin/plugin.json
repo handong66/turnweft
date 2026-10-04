@@ -1,0 +1,21 @@
+{
+  "name": "turnweft",
+  "version": "0.1.0-alpha.0",
+  "description": "Persistent external coding agent sessions and bounded background jobs for Codex.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Turnweft",
+    "shortDescription": "Delegate and continue external agent sessions",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use Turnweft to delegate a bounded task in this project."
+    ]
+  },
+  "license": "MIT",
+  "repository": "https://github.com/handong66/turnweft"
+}

@@ -1,0 +1,10 @@
+{
+  "name": "turnweft",
+  "version": "0.1.0",
+  "description": "Delegate work to Dim, Droid, Grok, OpenCode and agy from Claude Code, with persistent sessions in your real project.",
+  "author": {
+    "name": "handong66"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/handong66/turnweft"
+}
