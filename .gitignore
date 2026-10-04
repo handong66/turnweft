@@ -4,3 +4,13 @@ node_modules/
 .DS_Store
 dist/
 dist-test/
+
+# Raw agent protocol logs stay on this machine: agents load local context (memories, skill lists,
+# home paths) and the logs record it. Only the README is published.
+m0/results/*
+!m0/results/README.md
+
+# Private notes and local agent instructions
+local/
+CLAUDE.local.md
+AGENTS.override.md
