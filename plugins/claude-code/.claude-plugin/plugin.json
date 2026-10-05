@@ -1,6 +1,6 @@
 {
   "name": "turnweft",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Delegate work to Dim, Droid, Grok, OpenCode and agy from Claude Code, with persistent sessions in your real project.",
   "author": {
     "name": "handong66"
