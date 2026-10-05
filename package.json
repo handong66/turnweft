@@ -36,10 +36,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test --test-concurrency=1 'dist/tests/*.test.js'",
     "clean": "rm -rf dist",
-    "prepare": "npm run build",
+    "prepare": "npm run build && node scripts/install-hooks.mjs",
     "sync-launcher": "node scripts/sync-launcher.mjs",
-    "version": "node scripts/sync-version.mjs && git add plugins/claude-code/.claude-plugin/plugin.json plugins/codex/.codex-plugin/plugin.json",
-    "prepublishOnly": "node scripts/sync-version.mjs --check"
+    "version": "node scripts/sync-version.mjs && node scripts/changelog.mjs --release && git add plugins/claude-code/.claude-plugin/plugin.json plugins/codex/.codex-plugin/plugin.json CHANGELOG.md",
+    "prepublishOnly": "node scripts/sync-version.mjs --check && node scripts/changelog.mjs --check"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.7.0",
@@ -55,7 +55,8 @@
     "plugins",
     "README.md",
     "README.zh-CN.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "os": [
     "darwin"

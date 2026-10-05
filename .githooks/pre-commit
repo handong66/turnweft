@@ -1,0 +1,3 @@
+#!/bin/sh
+# Docs, changelog and privacy gate. See scripts/docs-gate.mjs.
+exec node scripts/docs-gate.mjs

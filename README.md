@@ -2,75 +2,207 @@
 
 [中文说明](README.zh-CN.md)
 
-Persistent agent sessions for Claude Code and Codex.
+[![npm](https://img.shields.io/npm/v/turnweft)](https://www.npmjs.com/package/turnweft) [![license](https://img.shields.io/npm/l/turnweft)](LICENSE)
 
-From Claude Code (CC) or Codex, delegate work to **Dim, Droid, Grok, OpenCode or agy**. The delegated agent reads, writes and runs commands in your real project directory, and you can keep following up in the same session. A permission you have confirmed once is not asked again.
+**Let Claude Code and Codex hand work to your other coding agents, in your real project, and keep the conversation going.**
 
-> Status: `0.1.0-alpha`, macOS only. Design and decisions: [TURNWEFT_DESIGN_AND_DEVELOPMENT_PLAN.md](TURNWEFT_DESIGN_AND_DEVELOPMENT_PLAN.md). Test records: [docs/m0/M0_RESULTS.md](docs/m0/M0_RESULTS.md) (protocol probes) and [docs/e2e/E2E_RESULTS.md](docs/e2e/E2E_RESULTS.md) (end to end). These documents are written in Chinese.
+You talk to Claude Code or Codex as usual. When you want a second opinion, a parallel pair of hands, or simply another model, say so: "ask Grok to review this", "have Droid fix the failing tests". Turnweft starts that agent in the same project folder. The agent reads and changes the real files, and the result comes back to your conversation. Ask a follow-up tomorrow and you reach the same agent session, which still remembers the earlier work.
 
-## How it works
+Supported agents: **Dim, Droid, Grok, OpenCode and agy**.
 
-```
-CC / Codex ──MCP──▶ turnweft mcp ──▶ shared state (~/.turnweft/state.sqlite)
-                                          │
-                                          ▼
-                          one background worker per active session
-                                          │
-                 ┌──────────── ACP ───────┴────── native stream-json ─┐
-                 ▼          ▼          ▼          ▼                    ▼
-                Dim       Droid      Grok     OpenCode               agy
-```
+> Status: `0.1.0-alpha`, macOS only. It works end to end with all five agents in both Claude Code and Codex, but expect rough edges. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
-- **Sessions persist.** Each Turnweft session is bound to one native session ID. After an idle timeout the agent process is stopped; the next follow-up resumes the same native session. If it cannot be resumed you get an explicit error, never a silent new session.
-- **Real directory.** Agents work directly in your project: no copies, no worktrees. Every result lists the files changed in that turn separately from changes that were already uncommitted.
-- **Permissions.** Every open or resume sets the agent's native permission mode and reads it back. When that mode is broader than what you have granted, you confirm once per agent × project × intent (see [Confirming permissions](#confirming-permissions)). Every result states the actual mode.
-- **No duplicate runs.** Callers send a `requestId`; a retry returns the original job. A job that was delivered and then lost contact is marked `in_doubt` and is never resent automatically.
+---
 
-## Install
+## Why Turnweft
 
-Requires macOS, Node.js ≥ 22.13, and the CLIs of the agents you want to use, each already signed in.
+If you use more than one coding agent, you probably know the routine:
+
+- You copy code and context from one tool into another, then copy the answer back.
+- The second agent works on a copy or in a separate folder, so its changes have to be moved over by hand.
+- Coming back later means starting a new chat and explaining everything again.
+- Each agent has its own plugin, and each plugin behaves a little differently.
+
+Turnweft replaces that with one way of working. You stay in the assistant you already use, the other agent works where your code actually lives, and every session can be picked up again.
+
+## What it looks like
+
+### A second opinion, without leaving your chat
+
+> **You** (in Claude Code): Ask Grok to review the login changes I just made. Don't change anything.
+>
+> **Claude**: Grok looked at `src/auth/session.ts` and `src/auth/login.ts` and flags two issues. The session token is compared with `==` instead of a constant-time check. A failed login doesn't reset the attempt counter. Want me to have Grok fix them, or should I?
+
+Grok read the real files in your project. Because you asked for a review, it changed nothing.
+
+### Hand off a fix while you keep working
+
+> **You**: Have Droid fix the failing tests in `test/math.test.js`, then tell me what it changed.
+>
+> **Claude**: Droid fixed both bugs. Changed in this turn: `src/math.js`. Your own uncommitted edit to `NOTES.md` was already there and was left alone. I ran the tests myself: 2 passed, 0 failed.
+
+The result separates the files the agent changed from changes you already had. Claude also runs the tests itself instead of taking the agent's word for it.
+
+### Pick up where you left off
+
+> **You** (the next morning): Ask the same Droid session why it changed the rounding.
+>
+> **Claude**: Droid says the old code used `Math.floor`, which rounds negative numbers the wrong way for this function, so it switched to `Math.trunc`…
+
+Each Turnweft session is tied to the agent's own session. When an idle agent is stopped to save resources, the next question resumes that exact session. It never starts a fresh one that has forgotten everything.
+
+### Permissions: asked once, or not at all
+
+The first time an agent needs more than reading in a project, such as editing files and running commands, a macOS dialog asks you. It names the agent, the project and exactly what the agent will be allowed to do. You click **Allow** once for that agent, project and kind of task, and the waiting task starts by itself. If your Claude Code conversation runs in **bypass permissions** mode, or your Codex thread has **full access**, Turnweft takes that as your answer and doesn't ask.
+
+## A typical journey
+
+1. **Install once.** Run `npm install -g turnweft`, then add the plugin to Claude Code and/or Codex (see [Quick start](#quick-start)).
+2. **Ask in plain language.** For example: "Ask OpenCode how this module is structured" or "Have agy implement the CSV export". There are no new commands to learn.
+3. **Confirm once if asked.** A dialog may appear the first time an agent edits files in a project. It waits for you, and silence never counts as "no".
+4. **Get a verified result.** You see the agent's answer, the files it changed, and the permission mode it actually ran with. Claude or Codex checks the work before calling it done.
+5. **Follow up anytime.** Ask the same agent again, minutes or days later, and it remembers the earlier work.
+6. **Stay in control.** You can cancel a running task, list or revoke past permissions, and see exactly what each agent was allowed to do.
+
+## Who it's for
+
+- People who already use Claude Code or Codex and also have accounts with other coding agents.
+- People who want a second model to review or double-check work without copy-pasting.
+- People who want to spread work across agents, quotas or models while one conversation stays in charge.
+
+## Quick start
+
+**Requirements:**
+
+- macOS
+- Node.js 22.13 or later
+- The command-line tool of each agent you want to use (`dim`, `droid`, `grok`, `opencode`, `agy`), already signed in
 
 ```bash
 npm install -g turnweft
-turnweft doctor     # checks which agents are available; starts no model task
+turnweft doctor        # shows which agents were found; starts no model task
 ```
 
-Turnweft looks for each agent CLI on PATH first, then in common install locations (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, plus `~/.opencode/bin` and the `dim` bundled in DimAgent.app), so it also works when a host started from the Dock has a short PATH. Other locations can be set under `executables` in `~/.turnweft/config.json`.
-
-### Claude Code
+**Claude Code:**
 
 ```bash
 claude plugin marketplace add handong66/turnweft
 claude plugin install turnweft@turnweft
 ```
 
-### Codex
+**Codex:**
 
 ```bash
 codex plugin marketplace add handong66/turnweft
 codex plugin add turnweft@turnweft
 ```
 
-Restart Codex afterwards; new conversations load the plugin.
+Start a **new** conversation afterwards so it loads the plugin; for Codex, restart the app first. Then try:
 
-Both plugins contain only an MCP registration, a skill and a launcher. The runtime always comes from the `turnweft` command. If it is missing or too old, the plugin offers a single `turnweft_setup` tool that explains how to install it.
+```
+Ask Droid to explain what this project does, in five bullet points.
+```
 
-## Confirming permissions
+## Things you can ask
 
-When the agent's mode is broader than your grant, the job is recorded as `waiting_confirmation` and nothing runs yet:
+- "Ask Grok to review my last commit for security problems. Read only."
+- "Have Droid fix the failing test in `test/api.test.ts` and run the tests."
+- "Ask OpenCode to compare our two caching approaches and recommend one."
+- "Have agy add a `--json` flag to the export command."
+- "Continue with the same Dim session: why did you choose that library?"
+- "Cancel the Droid task."
+
+You can name a model if you want one ("use Droid with glm-5.3-flash"). Otherwise each agent uses its own default.
+
+## Permissions and safety
+
+- **Read-only when you ask for analysis.** Reviews and questions run in each agent's read-only or ask-first mode wherever the agent has one. The exception is a Grok config that auto-approves everything: Grok then can't be held read-only, so Turnweft says so and asks you to confirm.
+- **Broader modes are confirmed once.** Some agents can only edit in a mode that goes beyond what you granted. For example, the agent approves commands automatically, or it skips its own permission checks. Then a macOS dialog asks you once per agent × project × kind of task. If the agent's version changes, or the mode starts allowing more, you are asked again.
+- **Bypass conversations aren't asked.** In Claude Code, only `bypassPermissions` counts; auto mode and every other mode still show the dialog. In Codex, only full access (`danger-full-access`) counts. Turnweft learns the mode from Claude Code or Codex itself, never from what the model says. This kind of approval covers one task and is not remembered.
+- **Every result tells the truth about permissions.** It states the mode the agent actually ran with, what that mode allows beyond your grant, and what authorized it.
+- **Nothing runs twice by accident.** If the connection drops after a task was handed over, the task is marked `in_doubt` for you to check. It is never resent automatically.
+- **Local only.** Turnweft keeps its state in `~/.turnweft` and makes no network requests of its own. The agents themselves talk to their providers as usual.
+
+What Turnweft can't do:
+
+- It can't hold an agent tighter than that agent's own permission modes allow.
+- It can't stop another program running under your account from editing Turnweft's local files.
+
+## Supported agents
+
+Tested on macOS with these versions:
+
+| Agent | How Turnweft talks to it | Mode used for code changes | Edits files | Follow-ups | Resume after idle | Cancel |
+| --- | --- | --- | --- | --- | --- | --- |
+| Dim 0.5.16 | ACP | `workspace-write`; command requests answered by Turnweft | ✅ | ✅ | ✅ | ✅ |
+| Droid 0.233.0 | ACP | `autonomy_level=normal`; each edit and command request answered by Turnweft | ✅ | ✅ | ✅ | ✅ |
+| Grok 1.0.46 | ACP (`agent --no-leader stdio`) | follows your `~/.grok/config.toml` | ✅ | ✅ | ✅ | ✅ |
+| OpenCode 1.18.34 | ACP | `build` mode, following OpenCode's own permission config | ✅ | ✅ | ✅ | ✅ |
+| agy 1.2.16 | native long-lived stream-json | skip permissions + accept edits | ✅ | ✅ | ✅ | ✅ |
+
+## How it works
+
+```
+Claude Code / Codex ──MCP──▶ turnweft mcp ──▶ shared state (~/.turnweft/state.sqlite)
+                                                   │
+                                                   ▼
+                                   one background worker per active session
+                                                   │
+                  ┌──────────── ACP ───────────────┴──── native stream-json ──┐
+                  ▼          ▼          ▼          ▼                            ▼
+                 Dim       Droid      Grok     OpenCode                       agy
+```
+
+- **One runtime, two thin plugins.** The npm package is the only runtime. Each plugin contains an MCP registration, a skill that teaches the assistant how to use Turnweft, and a small launcher. The Claude Code plugin also has a hook that reports the conversation's permission mode. If the runtime is missing, the plugin offers a single setup tool that explains how to install it.
+- **Sessions and jobs.** A session binds to one native agent session. Each request is a background job. The caller supplies a `requestId`, so a retry returns the original job. Jobs in a session run in order, and writes to the same project run one at a time, even across sessions.
+- **Native permissions, read back.** Whenever an agent session is opened or resumed, Turnweft sets the agent's own permission mode and reads it back. If the agent reports something else, the task doesn't run.
+- **Idle and resume.** Idle agents are stopped after 10 minutes. The next request resumes them through their native session ID. If resuming fails, you get an error instead of a silent fresh start.
+- **Two hosts, one store.** Claude Code and Codex share the same state. To continue a session from the other host, attach it explicitly.
+
+The full design and every decision are in [TURNWEFT_DESIGN_AND_DEVELOPMENT_PLAN.md](TURNWEFT_DESIGN_AND_DEVELOPMENT_PLAN.md). Test records: [docs/m0/M0_RESULTS.md](docs/m0/M0_RESULTS.md) (protocol probes) and [docs/e2e/E2E_RESULTS.md](docs/e2e/E2E_RESULTS.md) (end to end). These documents are in Chinese.
+
+## Confirming permissions in detail
+
+When an agent's mode goes beyond your grant, the job is recorded as `waiting_confirmation` and nothing runs yet:
 
 1. Turnweft first asks the host to show its own confirmation prompt. In testing, Claude Code 2.1.286 and the Codex 0.160.0 desktop app both declined it automatically without showing it.
-2. Turnweft then shows a macOS dialog naming the agent, project, mode and what it allows beyond your grant. The dialog waits for your choice; no answer never counts as a denial.
+2. Turnweft then shows a macOS dialog. It names the agent, the project, the mode and what that mode allows beyond your grant. The dialog waits for your choice; no answer never counts as a denial.
 3. **Allow** starts the waiting job without resubmitting. **Deny** cancels it (`confirmation_denied`). A proposal expires after 24 hours (`confirmation_expired`).
-4. `turnweft send` on the command line shows the same dialog. You can also run `turnweft policy grant <proposalId>` in a terminal and type `yes` or `no`. It refuses non-terminal input and has no auto-approve flag, but it cannot tell who is typing: run it yourself rather than letting an agent with a terminal tool run it.
+4. `turnweft send` on the command line shows the same dialog. You can also run `turnweft policy grant <proposalId>` in a terminal and type `yes` or `no`. It refuses non-terminal input and has no auto-approve flag, but it can't tell who is typing. Run it yourself; don't let an agent with a terminal tool run it for you.
 
-**Bypass conversations are not asked.** When the host conversation runs in its bypass mode, Turnweft authorizes the job directly: no proposal, no dialog. It trusts only a signal the host produces for that very call. In Claude Code, the plugin's PreToolUse hook receives the conversation's current permission mode right before each `turnweft_ask` / `turnweft_delegate` call and records it for that exact call (tool and task arguments, valid for 15 seconds, used once). The mode must be `bypassPermissions` (auto mode and every other mode still show the dialog). In Codex, the call's turn metadata must say `sandbox_mode: danger-full-access` (full access). The authorization covers that one job and the capabilities it had at submission. It is not remembered, so the same project in a non-bypass conversation still asks. `turnweft send` on the command line never auto-authorizes. Results state the actual mode and `authorizedBy`.
+**Bypass conversations.** Turnweft trusts only a signal the host produces for that very call:
 
-Confirmations are stored per agent × project × intent and are not asked again while they stay valid; a new agent version or a change in what the mode allows asks again. List them with `turnweft policy list`; revoke one with `turnweft policy revoke <id>`.
+- **Claude Code:** right before each `turnweft_ask` or `turnweft_delegate` call, the plugin's PreToolUse hook receives the conversation's current permission mode. The hook records the mode for that exact call (tool and task arguments). The record is valid for 15 seconds and used once. Only `bypassPermissions` counts.
+- **Codex:** the call's turn metadata must say `sandbox_mode: danger-full-access`.
 
-Text shown to people (dialog, CLI output, proposals) is in English or Chinese. To pick one, set `"language": "zh"` or `"en"` in `~/.turnweft/config.json`; this also works for hosts started from the Dock, which do not see shell variables. Otherwise Turnweft follows `TURNWEFT_LANG`, then `LC_ALL`, `LC_MESSAGES` and `LANG`, then the macOS primary language, and defaults to English. (`TURNWEFT_LANG` overrides the config file.) Model-facing tool descriptions and warnings remain English. Existing stored confirmations retain their original text.
+The approval covers one job, at the permissions it had when you submitted it. The `turnweft` command line never takes a bypass signal. A conversation that was open before you installed or updated the plugin keeps the old version until you start a new one.
+
+Confirmations are stored per agent × project × kind of task. List them with `turnweft policy list`, and revoke one with `turnweft policy revoke <id>`.
+
+## Configuration
+
+Optional settings live in `~/.turnweft/config.json`:
+
+```json
+{
+  "language": "en",
+  "executables": { "droid": "/custom/path/droid" },
+  "idleReleaseMs": 600000,
+  "inactivityTimeoutMs": 600000
+}
+```
+
+- **`language`** picks the language of text shown to people, such as dialogs and CLI output: `"en"` or `"zh"`.
+  - Without it, Turnweft follows `TURNWEFT_LANG`, then `LC_ALL`, `LC_MESSAGES` and `LANG`, then the macOS primary language, and finally defaults to English.
+  - Hosts started from the Dock don't see shell variables, so this setting is the reliable way to choose.
+  - Text written for the model is always in English.
+- **`executables`** gives explicit paths to agent CLIs. Without it, Turnweft looks on `PATH`, then in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. It also checks `~/.opencode/bin` for OpenCode and the copy of `dim` bundled in DimAgent.app.
+- **`idleReleaseMs`** is how long an idle agent is kept running before it is stopped. The default is 10 minutes.
+- **`inactivityTimeoutMs`** is how long a turn may go without any activity from the agent before it is cancelled. The default is 10 minutes.
 
 ## Command line
+
+The plugins cover normal use. The CLI is useful for scripting and inspection:
 
 ```bash
 turnweft session create --agent droid --cwd .        # returns a tws_… session ID
@@ -81,36 +213,48 @@ turnweft policy list
 turnweft session close tws_…
 ```
 
-## Agents (tested on macOS)
+## Troubleshooting
 
-| Agent | Transport | Native mode for implement | Writes | Follow-up | Resume after stop | Cancel |
-| --- | --- | --- | --- | --- | --- | --- |
-| Dim 0.5.16 | ACP | `permission=workspace-write`; command requests answered by Turnweft | ✅ | ✅ | ✅ | ✅ |
-| Droid 0.233.0 | ACP | `autonomy_level=normal`; each edit and command request answered by Turnweft | ✅ | ✅ | ✅ | ✅ |
-| Grok 1.0.46 | ACP (`agent --no-leader stdio`) | follows your `~/.grok/config.toml` (confirm once if it is broader than your grant) | ✅ | ✅ | ✅ | ✅ |
-| agy 1.2.16 | native long-lived stream-json | skip permissions + accept-edits (confirm once) | ✅ | ✅ | ✅ | ✅ |
-| OpenCode 1.18.34 | ACP | `mode=build`, following OpenCode's own permission config (confirm once) | ✅ | ✅ | ✅ | ✅ |
+- **An agent shows as unavailable.** Run `turnweft doctor`. It says which CLI is missing or not signed in. If the CLI lives somewhere unusual, set its path under `executables`.
+- **A dialog appeared in a bypass conversation.** Either that conversation started before the plugin was installed or updated, or the assistant used the `turnweft` command line instead of the plugin tools. Start a new conversation.
+- **The assistant says Turnweft isn't installed.** The plugin found no runtime. Run `npm install -g turnweft`, then start a new conversation.
+- **Logs** are in `~/.turnweft/logs/`:
+  - `mcp.log`: confirmation channels
+  - `dialog.log`: dialogs
+  - `worker-*.log`: one file per session
 
 ## Known limitations
 
 - macOS only, including the confirmation dialog.
-- Stopping relies on process groups: child processes that leave their group (for example with `setsid`) are not tracked.
-- Grok's actual permission mode cannot be read back; Turnweft infers it from `~/.grok/config.toml`. OpenCode's effective permission rules cannot be read back either. Results say so.
-- OpenCode's ACP does not report provider errors (such as an exhausted quota); Turnweft detects them only through an inactivity timeout.
-- Setting a Dim model explicitly changes that workspace's default model persistently; results mention it.
-- No model is chosen by Turnweft: each agent uses its own default unless you pass one.
+- Stopping an agent relies on process groups. Child processes that leave their group (for example with `setsid`) are not tracked.
+- Grok's actual permission mode can't be read back; Turnweft infers it from `~/.grok/config.toml`. OpenCode's effective permission rules can't be read back either. Results say so.
+- OpenCode's ACP doesn't report provider errors such as an exhausted quota, so Turnweft only detects them through the inactivity timeout.
+- Setting a Dim model explicitly changes that workspace's default model for good. Results mention it.
+- Claude Code and Codex are hosts, not targets: Turnweft doesn't delegate work to them.
+
+## Uninstall
+
+```bash
+claude plugin uninstall turnweft@turnweft
+codex plugin remove turnweft@turnweft
+npm uninstall -g turnweft
+```
+
+Turnweft's sessions, confirmations and logs stay in `~/.turnweft` until you delete that folder.
 
 ## Development
 
 ```bash
 git clone https://github.com/handong66/turnweft.git
 cd turnweft
-npm install
+npm install         # also enables the repository's git hooks
 npm run build
-npm link            # provides the turnweft command from this checkout
+npm link            # the turnweft command now runs this checkout
 npm test            # core and host-layer tests with simulated agents; no model quota used
 node scripts/live-smoke.mjs droid --model <model>   # real agent end to end (uses quota)
 ```
+
+Every change that affects users updates the docs and adds an entry to [CHANGELOG.md](CHANGELOG.md). A pre-commit hook checks this, and publishing requires a changelog section for the version being published. Before publishing, run `node scripts/privacy-scan.mjs` and `node scripts/privacy-scan.mjs --pack`. Change versions only with `npm version <v>`; it keeps the plugin manifests in sync.
 
 ## License
 

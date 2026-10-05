@@ -2,7 +2,7 @@
 
 > 文档版本：0.4 · 设计与开发计划。0.2 写入用户对首轮评审三项问题的决定；0.3 写入 Codex / Grok 交叉评审的收敛结论与 U14、U15；0.4 写入 M0 实测结论（权威记录：`docs/m0/M0_RESULTS.md`）。评审记录见 `TURNWEFT_DESIGN_REVIEW_2026-10-03.md`。  
 > 编写日期：2026-10-04 UTC（本机时区为 2026-10-03）  
-> 当前状态：0.1.0-alpha.0 已开源发布（2026-10-04）：GitHub `handong66/turnweft`（MIT），npm `turnweft`（latest）。五个 Agent × CC / Codex 两个宿主均有实测记录（`docs/e2e/E2E_RESULTS.md`）；发布方式见 U20。  
+> 当前状态：已开源发布（2026-10-04 起）：GitHub `handong66/turnweft`（MIT），npm `turnweft`。各版本内容见 GitHub Releases，当前版本号以 `package.json` 为准。五个 Agent × CC / Codex 两个宿主均有实测记录（`docs/e2e/E2E_RESULTS.md`）；发布方式见 U20，宿主 bypass 授权见 U21。  
 > 阅读对象：不掌握此前聊天上下文的架构评审者、实现 Agent 和维护者。
 
 ## 0. 如何阅读和评审这份文档
@@ -74,6 +74,7 @@ AgentBridge 已有多个同领域项目；AgentRelay / `agent-relay` 也已有�
 | U19 | **确认时没有回应就一直等待，不默认拒绝**：缺少 U11 确认时，任务记录为 `waiting_confirmation` 并立即返回；macOS 对话框由独立的 `turnweft dialog <proposalId>` 进程弹出，不受工具调用时限限制，一直等用户选择。点“允许”（或终端输入 yes、宿主 elicitation 同意）后，等待中的任务自动开始，无需重新提交；点“拒绝”（或终端输入 no）则取消，`confirmation_denied`；只有提案过期（24 小时）才失败，`confirmation_expired`。同一会话中排在等待任务之后的任务按 FIFO 继续等待；同一 key 的待确认提案共用，避免重复弹窗。宿主 elicitation 只有明确选“否”并提交才算拒绝，关闭或 decline 都只是继续等待，不按响应快慢推断。对话框进程记录自身和 osascript 子进程的身份，接管前先确认旧对话框已关闭；没有任务再等这次确认（已取消、会话关闭）时对话框自动关闭，这不算决定。旧版状态库升级时补齐提案归类键并合并重复的待确认提案，保留最早过期的那个。（2026-10-04） | §7.4、§8.5 |
 | U20 | **开源发布**：MIT 许可证；公开仓库和 npm 包都叫 `turnweft`；README 以英文为主，另附中文版（README.zh-CN.md）；同时发布到 npm。私人仓库保留为完整开发记录，公开仓库只放一个干净的初始提交，不含 `m0/results/` 原始协议日志（其中录到了本机的 Agent 记忆、skill 列表和本机路径）。创建公开仓库、改名私人仓库和 npm 发布在准备好产物并经用户确认后执行；npm 登录由用户本人完成。（2026-10-04） | §15 M4 |
 | U21 | **宿主处于 bypass 模式时，由该模式授权，不再确认**：从开了 bypass 的宿主对话提交的任务直接放行，不生成提案、不弹窗；只对这一个任务有效，不保存为长期确认，同一项目在非 bypass 对话中照常确认。只认宿主为**这一次调用**给出的信号：Claude Code 由插件自带的 PreToolUse 钩子在每次 `turnweft_ask` / `turnweft_delegate` 调用前取得 Claude Code 交给它的当前 `permission_mode`，按会话 ID 和本次调用的摘要（工具名 + 全部任务参数：Turnweft 会话、任务内容、requestId）记下；钩子写入前先删除旧记录。运行时只认 15 秒内、全部对得上的记录，读后即删，参数无效的调用也会消耗记录。这依赖钩子正常运行：钩子没运行时没有新记录，就照常弹窗；只有 `bypassPermissions` 算数，`auto` 等其他模式照常弹窗。Codex 读本次调用附带的 `x-codex-turn-metadata.sandbox_mode`，只有 `danger-full-access`（完全访问）算数。命令行 `turnweft send` 永远不自动放行（它的环境变量谁都能改），需要确认时弹出 macOS 对话框。bypass 授权与长期确认相互独立：撤销确认不影响已放行的任务；授权绑定提交时的权限指纹，排队期间档位或版本变化则要求重新授权。读不到或不确定时按非 bypass 处理。结果写明实际档位和 `authorizedBy`。第 11 轮评审后改为钩子方案：最初从对话记录推断模式，可被模型写进工具参数的文字和命令行环境变量伪造。第 12 轮评审后，记录从只绑定 requestId 改为绑定整次调用，并缩短有效期。（2026-10-05） | §7.4 |
+| U22 | **文档与变更记录门禁**：每次影响用户的改动都要同步更新相关文档，并在 `CHANGELOG.md` 的 Unreleased 下写一条记录。提交门禁（`.githooks/pre-commit` → `scripts/docs-gate.mjs`，`npm install` 时自动启用）会检查两件事：改了 `src/`（测试除外）、`plugins/`、`package.json` 或插件市场文件却没改 `CHANGELOG.md` 的提交会被拦下，并列出需要核对的文档；同时跑隐私扫描。`npm version` 会把 Unreleased 改为新版本一节；`npm publish` 前 `prepublishOnly` 检查当前版本有没有对应的记录。紧急情况可用 `git commit --no-verify` 绕过，不作为常规做法。（2026-10-05） | §15 |
 
 模型 ID 的核对范围：本机 Droid 0.233.0 的 `--list-tools` 校验接受 `glm-5.3-flash`（内置模型）；Dim 0.5.16 的 `dim model list` 列出了 `dimcode-api-oauth/deepseek-v4.1-flash`。两者都尚未用来运行任务。
 

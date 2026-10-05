@@ -3,7 +3,7 @@ name: turnweft
 description: Delegate bounded analysis or implementation to dim, droid, grok, opencode or agy and continue exact persistent sessions.
 ---
 
-Use the registered Turnweft MCP tools. The `turnweft` executable must be available on PATH after building and installing the package. The host uses the shared runtime; the temporary factory stub alone cannot run tasks.
+Use the registered Turnweft MCP tools. They run through the `turnweft` runtime (`npm install -g turnweft`); if it is missing, the plugin offers only a `turnweft_setup` tool that explains how to install it. Do not shell out to the `turnweft` command line instead: it cannot see this thread's permission mode, so it always asks the user to confirm.
 
 1. Call `turnweft_agents` for availability, versions, capabilities and problems. Choose a provider; do not override its model unless the user explicitly requests one.
 2. Create a session with `turnweft_session` action `create`, provider and the real project cwd. Save the exact returned sessionId in the task context. Continue with that ID; never guess the latest session or use a name as a resume handle. List defaults to scope=this_host. To discover another host's sessions before cross-host continuation, use scope=project with canonicalRoot, then explicitly `attach` the exact sessionId.
