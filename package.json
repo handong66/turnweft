@@ -1,6 +1,6 @@
 {
   "name": "turnweft",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "Persistent agent sessions for Claude Code and Codex: delegate to Dim, Droid, Grok, OpenCode and agy in your real project.",
   "keywords": [
     "claude-code",
@@ -37,7 +37,9 @@
     "test": "npm run build && node --test --test-concurrency=1 'dist/tests/*.test.js'",
     "clean": "rm -rf dist",
     "prepare": "npm run build",
-    "sync-launcher": "node scripts/sync-launcher.mjs"
+    "sync-launcher": "node scripts/sync-launcher.mjs",
+    "version": "node scripts/sync-version.mjs && git add plugins/claude-code/.claude-plugin/plugin.json plugins/codex/.codex-plugin/plugin.json",
+    "prepublishOnly": "node scripts/sync-version.mjs --check"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.7.0",

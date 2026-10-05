@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { text } from "../core/i18n.js";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
@@ -16,6 +17,9 @@ import { failure, serviceFailure, success } from "./envelope.js";
 import { spawnDialogHelper } from "./native-dialog.js";
 import { dirname as pathDirname } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// One source of truth for the version: dist/mcp/server.js and dist-test/mcp/server.js both sit two levels below package.json.
+const PACKAGE_VERSION: string = createRequire(import.meta.url)("../../package.json").version;
 
 export interface McpServerOptions {
   connectionId?: string;
@@ -123,7 +127,7 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
   const requestedTimeout = opts.elicitationTimeoutMs ?? 25_000;
   if (!Number.isInteger(requestedTimeout) || requestedTimeout < 1) throw new Error("elicitationTimeoutMs must be a positive integer");
   const elicitationTimeout = Math.min(requestedTimeout, (opts.hostToolTimeoutMs ?? 30_000) - 1);
-  const server = new Server({ name: "turnweft", version: "0.1.0-alpha.0" }, { capabilities: { tools: {} } });
+  const server = new Server({ name: "turnweft", version: PACKAGE_VERSION }, { capabilities: { tools: {} } });
   const validator = new AjvJsonSchemaValidator();
   const validators = new Map(tools.map(tool => [tool.name, validator.getValidator<Record<string, unknown>>(tool.inputSchema)]));
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools }));

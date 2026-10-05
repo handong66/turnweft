@@ -346,3 +346,10 @@ test("round 5 finding 8: polling a waiting job retries the dialog helper", async
   assert.deepEqual(shown, ["twq_p"]);
   assert.ok(result.warnings.some((w: string) => w.includes("afterSeq 3")), JSON.stringify(result.warnings));
 });
+
+test("the MCP server reports the package version", async (t) => {
+  const { client } = await setup(t);
+  const { createRequire } = await import("node:module");
+  const pkg = createRequire(import.meta.url)("../../package.json") as { version: string };
+  assert.equal(client.getServerVersion()?.version, pkg.version);
+});
