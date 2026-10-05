@@ -7,8 +7,9 @@ import { existsSync } from "node:fs";
 const skip = process.env.CI || process.env.TURNWEFT_SKIP_HOOKS === "1";
 if (!skip && existsSync(".git") && existsSync(".githooks")) {
   const git = (...a) => execFileSync("git", a, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  // The effective value from any scope (local, global, system): a global hooks setup must keep working here.
   let current = "";
-  try { current = git("config", "--local", "--get", "core.hooksPath"); } catch { /* unset */ }
+  try { current = git("config", "--get", "core.hooksPath"); } catch { /* unset everywhere */ }
   if (current && current !== ".githooks") {
     console.warn(`turnweft: core.hooksPath is already "${current}"; leaving it. To enable the docs/changelog gate, run: git config core.hooksPath .githooks`);
   } else if (!current) {

@@ -27,16 +27,35 @@ export function parseNameStatus(raw) {
   return changes;
 }
 
-/** True if the staged CHANGELOG.md diff adds at least one list entry ("- ..."). */
-export function addsChangelogEntry(diff) {
-  return diff.split("\n").some((l) => /^\+\s*[-*] \S/.test(l));
+/** Normalized list entries ("- text") of a changelog section, or of the whole file when no heading is given. */
+export function entries(text, heading) {
+  let body = text;
+  if (heading) {
+    const parts = text.split(new RegExp(`^## \\[${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\][^\\n]*$`, "m"));
+    if (parts.length < 2) return [];
+    body = parts[1].split(/^## \[/m)[0];
+  }
+  return body.split("\n").map((l) => l.match(/^\s*[-*] (\S.*)$/)?.[1]?.trim()).filter(Boolean);
 }
 
-export function gate(changes, changelogDiff) {
+const versions = (text) => [...text.matchAll(/^## \[(\d[^\]]*)\]/gm)].map((m) => m[1]);
+
+/**
+ * True if CHANGELOG.md gained a real entry: a line under [Unreleased] whose text appeared nowhere in the previous
+ * file (re-indenting or moving an old entry does not count), or a new version section (`npm version`).
+ */
+export function changelogAdvanced(before, after) {
+  const old = new Set(entries(before));
+  if (entries(after, "Unreleased").some((e) => !old.has(e))) return true;
+  const had = new Set(versions(before));
+  return versions(after).some((v) => !had.has(v));
+}
+
+export function gate(changes, before, after) {
   const userFacing = [...new Set(changes.flatMap((c) => c.paths).filter(isUserFacing))];
   if (!userFacing.length) return { ok: true, userFacing };
   const log = changes.find((c) => c.paths.includes("CHANGELOG.md"));
-  const ok = Boolean(log) && log.status !== "D" && addsChangelogEntry(changelogDiff);
+  const ok = Boolean(log) && log.status !== "D" && changelogAdvanced(before, after);
   return { ok, userFacing };
 }
 
@@ -51,7 +70,8 @@ export const DOCS_TO_CHECK = [
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   const changes = parseNameStatus(git("diff", "--cached", "--name-status", "-z", "-M"));
-  const r = gate(changes, git("diff", "--cached", "-U0", "--", "CHANGELOG.md"));
+  const show = (rev) => { try { return git("show", `${rev}:CHANGELOG.md`); } catch { return ""; } };
+  const r = gate(changes, show("HEAD"), show(""));
   if (!r.ok) {
     console.error("Commit blocked: user-facing files changed without a new CHANGELOG.md entry.\n");
     console.error("Changed: " + r.userFacing.join(", ") + "\n");

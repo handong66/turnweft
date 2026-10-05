@@ -217,7 +217,7 @@ turnweft session close tws_…
 
 ## Troubleshooting
 
-- **An agent shows as unavailable.** Run `turnweft doctor`. It checks that each CLI is installed and reports its version, but it doesn't check whether you are signed in. A signed-out agent fails on its first task with `auth_required`. If the CLI lives somewhere unusual, set its path under `executables`.
+- **An agent shows as unavailable.** Run `turnweft doctor`. It checks that each CLI is installed and reports its version, but it doesn't check whether you are signed in. A signed-out agent fails when a task runs; the error code depends on the agent and the stage at which it fails. If the CLI lives somewhere unusual, set its path under `executables`.
 - **A dialog appeared in a bypass conversation.** Bypass approval needs runtime 0.1.0-alpha.2 or later (`npm install -g turnweft@latest`). Otherwise, either that conversation started before the plugin was installed or updated, or the assistant used the `turnweft` command line instead of the plugin tools. Start a new conversation.
 - **The assistant says Turnweft isn't installed.** The plugin found no runtime. Run `npm install -g turnweft`, then start a new conversation.
 - **Logs** are in `~/.turnweft/logs/`:

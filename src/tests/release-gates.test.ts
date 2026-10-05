@@ -4,10 +4,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const load = (p: string) => import(new URL(`../../scripts/${p}`, import.meta.url).href);
-const { gate, isUserFacing, parseNameStatus, addsChangelogEntry } = await load("docs-gate.mjs");
+const { gate, isUserFacing, parseNameStatus, changelogAdvanced } = await load("docs-gate.mjs");
 const { hasSection, release } = await load("changelog.mjs");
 
-const ENTRY = "@@ -9,0 +10 @@\n+- Fixed the thing.\n";
+const BEFORE = "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-01-01\n- Existing entry\n";
+const AFTER = "# Changelog\n\n## [Unreleased]\n- Fixed the thing.\n\n## [0.1.0] - 2026-01-01\n- Existing entry\n";
 const ns = (...rows: string[][]) => parseNameStatus(rows.flat().join("\0") + "\0");
 
 test("user-facing changes need a new CHANGELOG.md entry; tests and docs alone do not", () => {
@@ -16,22 +17,24 @@ test("user-facing changes need a new CHANGELOG.md entry; tests and docs alone do
   assert.equal(isUserFacing("package.json"), true);
   assert.equal(isUserFacing("src/tests/core-runtime.test.ts"), false);
   assert.equal(isUserFacing("README.md"), false);
-  assert.equal(gate(ns(["M", "src/runtime/worker.ts"]), "").ok, false);
-  assert.equal(gate(ns(["M", "src/runtime/worker.ts"], ["M", "CHANGELOG.md"]), ENTRY).ok, true);
-  assert.equal(gate(ns(["M", "src/tests/x.test.ts"], ["M", "README.md"]), "").ok, true);
-  assert.equal(gate([], "").ok, true);
+  assert.equal(gate(ns(["M", "src/runtime/worker.ts"]), BEFORE, BEFORE).ok, false);
+  assert.equal(gate(ns(["M", "src/runtime/worker.ts"], ["M", "CHANGELOG.md"]), BEFORE, AFTER).ok, true);
+  assert.equal(gate(ns(["M", "src/tests/x.test.ts"], ["M", "README.md"]), BEFORE, BEFORE).ok, true);
+  assert.equal(gate([], "", "").ok, true);
 });
 
-test("round 14: deleting or only reformatting CHANGELOG.md does not pass; renames count on both sides", () => {
-  assert.equal(gate(ns(["M", "src/runtime/worker.ts"], ["D", "CHANGELOG.md"]), ENTRY).ok, false, "deleted changelog");
-  assert.equal(gate(ns(["M", "src/runtime/worker.ts"], ["M", "CHANGELOG.md"]), "@@ -1 +1 @@\n-# Changelog\n+# Change log\n").ok, false, "no new entry");
-  assert.equal(addsChangelogEntry("+- An entry"), true);
-  assert.equal(addsChangelogEntry("+  - A nested entry"), true);
-  assert.equal(addsChangelogEntry("-- removed\n+## [Unreleased]"), false);
+test("round 14/15: deleting, reformatting or re-indenting CHANGELOG.md does not pass; renames count on both sides", () => {
+  const worker = ["M", "src/runtime/worker.ts"];
+  assert.equal(gate(ns(worker, ["D", "CHANGELOG.md"]), BEFORE, "").ok, false, "deleted changelog");
+  assert.equal(gate(ns(worker, ["M", "CHANGELOG.md"]), BEFORE, BEFORE.replace("# Changelog", "# Change log")).ok, false, "format only");
+  assert.equal(gate(ns(worker, ["M", "CHANGELOG.md"]), BEFORE, BEFORE.replace("- Existing entry", "  - Existing entry")).ok, false, "re-indented old entry");
+  assert.equal(gate(ns(worker, ["M", "CHANGELOG.md"]), BEFORE, BEFORE.replace("- Existing entry", "- Existing entry\n- Sneaky")).ok, false, "entry added to an old release, not Unreleased");
+  assert.equal(changelogAdvanced(BEFORE, BEFORE.replace("## [Unreleased]\n", "## [Unreleased]\n- Existing entry\n")), false, "moving an old entry into Unreleased");
+  assert.equal(changelogAdvanced(AFTER, AFTER.replace("## [Unreleased]\n- Fixed the thing.\n", "## [Unreleased]\n\n## [0.2.0] - 2026-02-02\n- Fixed the thing.\n")), true, "npm version release");
   const moved = ns(["R100", "src/runtime/ids.ts", "src/tests/ids.ts"]);
   assert.deepEqual(moved[0], { status: "R", paths: ["src/runtime/ids.ts", "src/tests/ids.ts"] });
-  assert.equal(gate(moved, "").ok, false, "moving production code into tests is still a user-facing change");
-  assert.equal(gate(ns(["M", "src/a b.ts"]), "").userFacing[0], "src/a b.ts", "paths with spaces survive -z parsing");
+  assert.equal(gate(moved, BEFORE, BEFORE).ok, false, "moving production code into tests is still a user-facing change");
+  assert.equal(gate(ns(["M", "src/a b.ts"]), BEFORE, BEFORE).userFacing[0], "src/a b.ts", "paths with spaces survive -z parsing");
 });
 
 test("npm version turns Unreleased into the version and keeps the comparison links in step", () => {

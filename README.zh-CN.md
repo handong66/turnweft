@@ -219,7 +219,7 @@ turnweft session close tws_…
 
 ## 常见问题
 
-- **某个 Agent 显示不可用**：运行 `turnweft doctor`。它会检查各命令行工具是否装好并报告版本，但不检查你是否已登录；没登录的 Agent 会在第一次执行任务时报 `auth_required`。工具装在不常见的位置时，在 `executables` 里写上路径。
+- **某个 Agent 显示不可用**：运行 `turnweft doctor`。它会检查各命令行工具是否装好并报告版本，但不检查你是否已登录。没登录的 Agent 会在执行任务时失败，错误码取决于 Agent 和失败的阶段。工具装在不常见的位置时，在 `executables` 里写上路径。
 - **开着 bypass 却弹出了确认框**：bypass 放行需要运行时 0.1.0-alpha.2 或更高版本（`npm install -g turnweft@latest`）。版本没问题的话，有两种可能：一是这个对话是在安装或更新插件之前开的，二是助手改用了 `turnweft` 命令行，没用插件工具。新开一个对话即可。
 - **助手说 Turnweft 没装**：插件没找到运行时。运行 `npm install -g turnweft`，然后新开一个对话。
 - **日志**在 `~/.turnweft/logs/` 下：
