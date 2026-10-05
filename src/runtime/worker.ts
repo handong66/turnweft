@@ -177,10 +177,10 @@ interface JobCtx {
 
 async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen"> {
   const { store, adapter, job, generation, cfg } = x;
-  if (!store.casJobState(job.id, ["queued"], "starting", { ownerGeneration: generation, startedAt: now() })) return "done";
-  // U23: settings are read once the turn is claimed, so an update that finished before this turn started always
-  // applies to it; an update made after this point applies to later turns.
-  const session = store.getSession(x.session.id) ?? x.session;
+  // U23: the session's settings are read in the same transaction that claims the turn: an update that committed
+  // before the claim applies to this turn, one committed after it only to later turns.
+  const session = store.claimJob(job.id, x.session.id, { ownerGeneration: generation, startedAt: now() });
+  if (!session) return "done";
   const finish = (state: JobState, extra: Partial<Job>, result?: JobResult, payload: Record<string, unknown> = {}) =>
     store.completeJob(job.id, generation, state, extra, result, { type: state === "succeeded" ? "turn.completed" : "turn.failed", payload: { state, errorCode: extra.errorCode, ...payload } });
   const cancelledBeforeDelivery = () => store.getJob(job.id)?.state === "cancel_requested";

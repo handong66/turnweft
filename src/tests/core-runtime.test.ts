@@ -1083,3 +1083,20 @@ test("U23 review 3: a launch-flag agent (agy) relaunches on the same native sess
     await svc.closeSession(s.id);
   });
 });
+
+test("U23 review 4: claiming a turn reads the session's level in the same transaction", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tw-db-"));
+  const st = new Store(join(dir, "state.db"));
+  const t = new Date().toISOString();
+  st.insertSession({ id: "tws_claim", provider: "dim", cwd: "/p", canonicalRoot: "/p", state: "ready", hostBindings: [], requestedEffort: "low", createdAt: t, updatedAt: t });
+  for (const id of ["twj_c1", "twj_c2"]) st.insertJob({ id, sessionId: "tws_claim", requestId: id, intent: "analyze", promptDigest: "d", state: "queued", acceptedAt: t, prompt: "x" });
+  assert.equal(st.claimJob("twj_c1", "tws_claim")!.requestedEffort, "low");
+  assert.equal(st.getJob("twj_c1")!.state, "starting");
+  assert.equal(st.claimJob("twj_c1", "tws_claim"), undefined, "a claimed turn cannot be claimed again");
+  st.updateSession("tws_claim", { requestedEffort: "max" }); // committed after the first claim, before the second
+  assert.equal(st.claimJob("twj_c2", "tws_missing"), undefined, "no session: nothing is claimed");
+  assert.equal(st.getJob("twj_c2")!.state, "queued");
+  assert.equal(st.claimJob("twj_c2", "tws_claim")!.requestedEffort, "max");
+  st.close();
+  rmSync(dir, { recursive: true, force: true });
+});

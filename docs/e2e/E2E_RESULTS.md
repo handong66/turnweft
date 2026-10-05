@@ -136,6 +136,17 @@ CC 的 `auto` 模式及其他非 bypass 模式照常弹窗，由 `src/tests/host
 
 第 12 轮评审后（33d1601），钩子记录改为绑定整次调用（工具 + 全部任务参数）、有效期 15 秒、参数无效也会被消耗。CC 插件从 GitHub 重装后复测：`bypassPermissions` 直接执行（说明钩子和运行时对真实调用参数算出的摘要一致），`default` 进入 `waiting_confirmation`，结束后 `~/.turnweft/host-mode/` 下没有残留记录。
 
+## 3e. 思考强度（U23，2026-10-05，`LocalService` 直连，测试机）
+
+| 场景 | 结果 |
+| --- | --- |
+| 五个 Agent 只做 open（不发 prompt）：合法值 | Dim high、Droid low（glm-5.3-flash）、Grok xhigh、OpenCode medium（ling-3.1-flash-free，换模型重置为 low 后再设）、agy high：全部设置成功，读回一致 |
+| 同上：非法值 | Dim bogus、Droid xhigh（glm-5.3-flash 不提供）、Grok max、OpenCode max、agy bogus：全部 `invalid_effort`，错误列出该模型实际提供的取值 |
+| 四个 ACP Agent 会话内改强度（不发 prompt） | 在运行中的会话里直接 `set_config_option`，不重启进程，1–210 ms；非法值被拒绝后保持原强度 |
+| Dim 实现席 `live-smoke --effort high`（deepseek-v4.1-flash） | 修复 + 测试通过；`thought_level=high`；L1 同会话追问、L2 进程重启后恢复都正确 |
+| Dim 会话中途 auto → max | 第二轮 `effort={requested:max, effective:max}`，原生会话 ID 不变，记得第一轮的 token |
+| agy 会话中途 low → high | 带新 `--effort` 重启并接回同一对话，原生会话 ID 不变，记得第一轮的 token |
+
 ## 4. 插件启动器
 
 - 运行时已安装（`npm link`，`/opt/homebrew/bin/turnweft` 为指向 `dist/cli/main.js` 的符号链接）：启动器找到运行时，并成功启动 `turnweft mcp`（上面第 2 节即经由它运行）。

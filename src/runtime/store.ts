@@ -297,6 +297,20 @@ export class Store {
     });
   }
 
+  /**
+   * U23: claim a queued job and read its session's settings under one write lock, so a session update lands either
+   * before the claim (and applies to this turn) or after it (and applies only to later turns).
+   */
+  claimJob(id: string, sessionId: string, extra: Partial<Job> = {}): Session | undefined {
+    return this.tx(() => {
+      const cur = this.getJob(id);
+      const session = this.getSession(sessionId);
+      if (!cur || cur.state !== "queued" || !session) return undefined;
+      this.updateJob(id, { ...extra, state: "starting" });
+      return session;
+    });
+  }
+
   /** Worker-side transition guarded by owner generation, so a fenced-out owner cannot write. */
   fencedTransition(id: string, generation: number, from: JobState[], to: JobState, extra: Partial<Job> = {}): boolean {
     return this.tx(() => {
