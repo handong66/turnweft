@@ -856,3 +856,25 @@ test("text before and after a tool call is kept, separated by a blank line (live
   const v2 = await waitDone((await submit(s0.id, "SAY:a\nSAY:b", "analyze")).id);
   assert.equal(v2.result?.finalText, "ab", "consecutive chunks of one message are not split");
 });
+
+test("U21: the host's bypass mode authorizes one job without a confirmation; nothing is stored", async () => {
+  process.env.TURNWEFT_FAKE_EXCESS = "1";
+  try {
+    const d = repo();
+    const s0 = await svc.createSession({ provider: "droid", cwd: d, host });
+    const o = await svc.submitTurn({ sessionId: s0.id, intent: "implement", prompt: "WRITE:bypass.txt", requestId: req(), host, hostBypass: "codex:danger-full-access" });
+    assert.equal(o.kind, "accepted", "no proposal, no dialog");
+    if (o.kind !== "accepted") return;
+    const v = await waitDone(o.job.id);
+    assert.equal(v.job.state, "succeeded");
+    assert.ok(existsSync(join(d, "bypass.txt")));
+    assert.equal(v.result?.permission?.authorizedBy, "codex:danger-full-access");
+    assert.equal(v.result?.permission?.policyId, undefined);
+    assert.ok(v.result!.permission!.excessOverGrant.length > 0, "the tier is still reported");
+    assert.equal((await svc.listPolicies({ canonicalRoot: s0.canonicalRoot })).length, 0, "bypass is not remembered");
+    // The same project from a conversation that is not in bypass mode asks as usual.
+    const again = await svc.submitTurn({ sessionId: s0.id, intent: "implement", prompt: "WRITE:asked.txt", requestId: req(), host });
+    assert.equal(again.kind, "awaiting_confirmation");
+    if (again.kind === "awaiting_confirmation") await svc.cancelJob(again.job.id);
+  } finally { delete process.env.TURNWEFT_FAKE_EXCESS; }
+});

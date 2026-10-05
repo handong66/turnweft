@@ -192,7 +192,8 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
   const probe = await adapter.probe();
   const tier: TierSpec = adapter.tierFor(job.intent, probe);
   const m = matchPolicy(store, { provider: session.provider, canonicalRoot: session.canonicalRoot, intent: job.intent, probe, tier });
-  if (!m.ok) {
+  const matchedPolicyId = m.ok ? m.policy?.id : undefined;
+  if (!m.ok && !job.hostBypass) {
     finish("failed", { errorCode: "needs_confirmation", failureReason: `tier or provider version changed since submission (now ${tier.tier}, ${probe.cliVersion}); resubmit to confirm again` });
     return "done";
   }
@@ -363,10 +364,10 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
     sessionId: session.id, jobId: job.id, provider: session.provider, cliVersion: probe.cliVersion,
     adapterVersion: adapter.adapterVersion, cwd: session.cwd, nativeSessionId: sessionNow.nativeSessionId,
     state, stopReason: outcome?.stopReason, finalText: text, resultComplete: !error || state === "cancelled", truncated,
-    permission: { effectiveMode: JSON.stringify(effective), policyId: m.policy?.id ?? job.policyId, excessOverGrant: tier.excess.map(message => renderMessage(message)), answeredRequests: answered },
+    permission: { effectiveMode: JSON.stringify(effective), policyId: matchedPolicyId ?? job.policyId, ...(!m.ok && job.hostBypass ? { authorizedBy: job.hostBypass } : {}), excessOverGrant: tier.excess.map(message => renderMessage(message)), answeredRequests: answered },
     model, files, toolCalls: toolCalls.slice(-200),
   };
-  finish(state, { errorCode, failureReason, policyId: m.policy?.id ?? job.policyId }, result, { stopReason: outcome?.stopReason });
+  finish(state, { errorCode, failureReason, policyId: matchedPolicyId ?? job.policyId }, result, { stopReason: outcome?.stopReason });
   store.setSessionStateUnlessClosed(session.id, lost && !sessionNow.nativeSessionId ? "broken" : "ready");
   // A connection whose close already started is never reused (round 2, finding 4).
   return lost || conn.hasExited || closeStarted ? "connection_lost" : "done";

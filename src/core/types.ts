@@ -148,6 +148,8 @@ export interface Job {
   policyId?: string;
   /** Set while the job waits for a U11 confirmation (state waiting_confirmation). */
   proposalId?: string;
+  /** U21: authorized by the submitting host's bypass mode instead of a stored U11 policy. */
+  hostBypass?: string;
   ownerGeneration?: number;
   acceptedAt: string;
   deliveredAt?: string;
@@ -179,6 +181,8 @@ export interface PermissionMapping {
   effectiveMode: string;
   grantRevision?: number;
   policyId?: string;
+  /** U21: set when the host's bypass mode, not a stored policy, authorized the excess. */
+  authorizedBy?: string;
   excessOverGrant: string[];
   /** Approvals Turnweft answered on the provider's behalf during this turn. */
   answeredRequests: Array<{ kind: string; title: string; decision: "allow" | "deny" }>;

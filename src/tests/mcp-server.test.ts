@@ -353,3 +353,19 @@ test("the MCP server reports the package version", async (t) => {
   const pkg = createRequire(import.meta.url)("../../package.json") as { version: string };
   assert.equal(client.getServerVersion()?.version, pkg.version);
 });
+
+test("U21: the MCP host layer passes the host's bypass signal, never a tool argument, and says so", async (t) => {
+  const seen: unknown[] = [];
+  const { service, client } = await setup(t, { server: { hostBypass: (host, meta) => { seen.push({ host, meta }); return "codex:danger-full-access"; } } });
+  const envelope = await call(client, "turnweft_delegate", { sessionId: "tws_session", prompt: "do it", requestId: "r-u21" }, { "x-codex-turn-metadata": { thread_id: "th", sandbox_mode: "danger-full-access" } });
+  assert.equal(service.submissions.at(-1)!.hostBypass, "codex:danger-full-access");
+  assert.equal(seen.length, 1);
+  assert.match(envelope.warnings.join("\n"), /bypass mode \(codex:danger-full-access\)/);
+  // A model-supplied field cannot set it: unknown arguments are rejected by the strict schema.
+  const forged = await client.callTool({ name: "turnweft_delegate", arguments: { sessionId: "tws_session", prompt: "x", requestId: "r-forged", hostBypass: "claude-code:bypassPermissions" } });
+  assert.equal(forged.isError, true);
+  // Without a detector (tests, or a host without a signal) nothing is passed.
+  const plain = await setup(t);
+  await call(plain.client, "turnweft_delegate", { sessionId: "tws_session", prompt: "do it", requestId: "r-plain" });
+  assert.equal(plain.service.submissions.at(-1)!.hostBypass, undefined);
+});

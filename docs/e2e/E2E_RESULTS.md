@@ -93,6 +93,24 @@ OpenCode 说明：`opencode-go/deepseek-v4.1-flash` 在测试时报 `Go usage li
 
 发现的问题：Grok 在调用工具前说的一句话（"I'll read README.md…"）和最终答案被直接首尾相连，中间没有换行。修复后，工具调用或权限请求前后的文字之间加一个空行，内容不删减。该修复随 0.1.0-alpha.1 发布；从 npm 升级后在 CC 中复测 Grok，最终文本为“I'll read the first line of `README.md` …”加空行，再接“# tw-fixture”。
 
+## 3d. 宿主 bypass 模式授权（U21，2026-10-05）
+
+用户反馈：在开了 bypass 的 CC 对话里，委派任务仍要求去终端确认。原因是那个对话的插件工具已经失效（插件重装之前开的对话），Claude 改为调用 `turnweft send`，而命令行路径当时只提示去终端确认、不弹窗。修复后：
+
+- bypass 对话直接放行；
+- 命令行路径需要确认时，也弹出 macOS 对话框。
+
+实测在开发模式（`npm link`）下进行，用 Grok 在全新目录中写文件。这类任务的档位比授权宽，原本必须确认：
+
+| 宿主与模式 | 结果 |
+| --- | --- |
+| CC，`--permission-mode bypassPermissions` | ✅ 直接执行，文件已写入；提示 `Authorized by the host's bypass mode (claude-code:bypassPermissions)` |
+| CC，`--permission-mode default` | ✅ 进入 `waiting_confirmation`，文件未写入（测试时用 `TURNWEFT_NO_NATIVE_DIALOG=1` 关掉了对话框） |
+| Codex，`-s danger-full-access` | ✅ 直接执行，文件已写入；提示 `codex:danger-full-access` |
+| Codex，`-s workspace-write`（无界面） | 未到 Turnweft：Codex 在审批策略为 never 时自己拒绝了 MCP 工具调用。桌面版普通模式下，Codex 会先请用户允许工具调用；这一路的 Turnweft 行为只由自动化测试覆盖 |
+
+CC 的 `auto` 模式及其他非 bypass 模式照常弹窗，由 `src/tests/host-mode.test.ts` 覆盖。
+
 ## 4. 插件启动器
 
 - 运行时已安装（`npm link`，`/opt/homebrew/bin/turnweft` 为指向 `dist/cli/main.js` 的符号链接）：启动器找到运行时，并成功启动 `turnweft mcp`（上面第 2 节即经由它运行）。

@@ -244,3 +244,16 @@ test("plugin manifests carry the package version", async () => {
     assert.equal(JSON.parse(readFileSync(`${root}${rel}`, "utf8")).version, version, `${rel} (run npm version, or node scripts/sync-version.mjs)`);
   }
 });
+
+test("U21/U19: send passes the host's bypass signal and shows the dialog when a confirmation is needed", async () => {
+  const h = harness("Implement it"); const service = new FakeService();
+  const dialogs: string[] = [];
+  assert.equal(await runCli(["send", "--session", "tws_session", "--intent", "implement", "--json"], service, h.io,
+    { hostBypass: () => "claude-code:bypassPermissions", showDialog: (id) => { dialogs.push(id); return true; } }), 0);
+  assert.equal(service.submissions.at(-1)!.hostBypass, "claude-code:bypassPermissions");
+  assert.equal(dialogs.length, 0, "accepted: no dialog");
+  const waiting = harness("Implement it"); const w = new FakeService(); w.awaitingConfirmation = true;
+  assert.equal(await runCli(["send", "--session", "tws_session", "--intent", "implement", "--json"], w, waiting.io,
+    { hostBypass: () => undefined, showDialog: (id) => { dialogs.push(id); return true; } }), 0);
+  assert.deepEqual(dialogs, [proposal.proposalId], "the CLI path shows the same dialog as MCP");
+});

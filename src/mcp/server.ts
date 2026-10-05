@@ -15,6 +15,7 @@ import { PROVIDERS } from "../core/types.js";
 import type { Envelope, HostBinding, PolicyProposal, ProviderId } from "../core/types.js";
 import { failure, serviceFailure, success } from "./envelope.js";
 import { spawnDialogHelper } from "./native-dialog.js";
+import { hostBypass } from "../runtime/host-mode.js";
 import { dirname as pathDirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,6 +30,8 @@ export interface McpServerOptions {
   onDiagnostic?: (info: { sandbox_mode?: unknown; workspaces?: unknown }) => void;
   /** Second U11 channel (U19): start the detached dialog helper for a proposal. startMcpServer enables the macOS one. */
   showDialog?: (proposalId: string) => boolean;
+  /** U21: read the host's own bypass signal for a submission. startMcpServer enables the real detector. */
+  hostBypass?: (host: HostBinding, meta: Record<string, unknown> | undefined) => string | undefined;
 }
 
 export type SessionAction =
@@ -169,7 +172,9 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
         }
         case "turnweft_ask":
         case "turnweft_delegate": {
-          const turn: SubmitTurnInput = { ...(input as Pick<SubmitTurnInput, "sessionId" | "prompt" | "requestId">), host, intent: request.params.name === "turnweft_ask" ? "analyze" : "implement" };
+          let bypass: string | undefined;
+          try { bypass = opts.hostBypass?.(host, request.params._meta); } catch { bypass = undefined; } // unreadable: ask as usual
+          const turn: SubmitTurnInput = { ...(input as Pick<SubmitTurnInput, "sessionId" | "prompt" | "requestId">), host, intent: request.params.name === "turnweft_ask" ? "analyze" : "implement", ...(bypass ? { hostBypass: bypass } : {}) };
           let outcome = await service.submitTurn(turn);
           if (outcome.kind === "needs_confirmation") {
             const proposal = outcome.proposal;
@@ -244,7 +249,8 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
             ]);
             break;
           }
-          envelope = outcome.kind === "accepted" ? success({ ...outcome, jobId: outcome.job.id, nextAction: "wait" })
+          envelope = outcome.kind === "accepted" ? success({ ...outcome, jobId: outcome.job.id, nextAction: "wait" },
+              outcome.job.hostBypass ? [`Authorized by the host's bypass mode (${outcome.job.hostBypass}); no confirmation was asked. The result reports the actual permission tier.`] : [])
             : outcome.kind === "needs_confirmation" ? confirmationRequired(outcome.proposal) : failure(outcome.code, outcome.message);
           break;
         }
@@ -267,7 +273,7 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
 
 export async function startMcpServer(service: TurnweftService, opts: McpServerOptions = {}): Promise<Server> {
   const cliMain = join(pathDirname(fileURLToPath(import.meta.url)), "..", "cli", "main.js");
-  const server = createMcpServer(service, { showDialog: (id) => spawnDialogHelper(id, cliMain), ...opts });
+  const server = createMcpServer(service, { showDialog: (id) => spawnDialogHelper(id, cliMain), hostBypass: (host, meta) => hostBypass(host, meta), ...opts });
   await server.connect(new StdioServerTransport());
   return server;
 }

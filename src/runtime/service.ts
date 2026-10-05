@@ -1,5 +1,6 @@
 // TurnweftService implementation over the shared store. Front ends (MCP, CLI) are thin: they record
 // requests here and wake a session worker; they never own provider processes (§6.2).
+import { renderMessage } from "../core/i18n.js";
 import type { ConfirmPolicyInput, CreateSessionInput, GetJobInput, JobView, SubmitTurnInput, SubmitTurnOutcome, TurnweftService } from "../core/service.js";
 import { PROVIDERS, TERMINAL_JOB_STATES, type HostBinding, type Job, type PolicyProposal, type ProbeResult, type ProviderId, type Session, type UserPolicy } from "../core/types.js";
 import { getAdapter } from "../adapters/registry.js";
@@ -127,19 +128,21 @@ export class LocalService implements TurnweftService {
     const done: Done = this.store.tx((): Done => {
       this.store.expireStaleTx();
       const m = matchPolicy(this.store, key);
-      const proposal = m.ok ? undefined : this.store.pendingProposalTx(
+      // U21: the host's bypass mode authorizes this one job; nothing is stored, so non-bypass conversations still ask.
+      const bypass = m.ok ? undefined : input.hostBypass;
+      const proposal = m.ok || bypass ? undefined : this.store.pendingProposalTx(
         { provider: s.provider, canonicalRoot: s.canonicalRoot, intent: input.intent, tier: tier.tier, capabilityDigest: capabilityDigest(s.provider, probe, tier) },
         () => buildProposal(key), { requestId: input.requestId, sessionId: s.id });
       const job: Job = {
         id: newJobId(), sessionId: s.id, requestId: input.requestId, intent: input.intent, promptDigest: digest,
         state: proposal ? "waiting_confirmation" : "queued", policyId: m.ok ? m.policy?.id : undefined,
-        proposalId: proposal?.proposalId, acceptedAt: now(),
+        proposalId: proposal?.proposalId, ...(bypass ? { hostBypass: bypass } : {}), acceptedAt: now(),
       };
       const inserted = this.store.insertJobCheckedTx({ ...job, prompt: input.prompt });
       if (inserted === "session_closed") return { kind: "rejected", code: "session_closed", message: "session was closed" };
       if (inserted === "session_broken") return { kind: "rejected", code: "session_broken", message: "session is broken" };
       if (inserted === "duplicate") return { kind: "dup" };
-      this.store.appendEventTx(job.id, "turn.accepted", { intent: input.intent, tier: tier.tier, policyId: job.policyId ?? null, waitingFor: proposal?.proposalId ?? null });
+      this.store.appendEventTx(job.id, "turn.accepted", { intent: input.intent, tier: tier.tier, policyId: job.policyId ?? null, waitingFor: proposal?.proposalId ?? null, ...(bypass ? { authorizedBy: bypass, excessOverGrant: tier.excess.map((x) => renderMessage(x)) } : {}) });
       return proposal ? { kind: "awaiting_confirmation", job, proposal } : { kind: "accepted", job };
     });
     if (done.kind === "dup") {

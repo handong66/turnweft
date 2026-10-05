@@ -47,7 +47,7 @@ export class FakeService implements TurnweftService {
     this.record("submitTurn", input); this.submissions.push(input);
     if (this.submitOutcome) return this.submitOutcome;
     if (this.awaitingConfirmation && !this.confirmations.length) return { kind: "awaiting_confirmation", job: { ...job, state: "waiting_confirmation", requestId: input.requestId, intent: input.intent, proposalId: proposal.proposalId }, proposal };
-    return this.confirmationNeeded && !this.confirmations.length ? { kind: "needs_confirmation", proposal } : { kind: "accepted", job: { ...job, requestId: input.requestId, intent: input.intent } };
+    return this.confirmationNeeded && !this.confirmations.length ? { kind: "needs_confirmation", proposal } : { kind: "accepted", job: { ...job, requestId: input.requestId, intent: input.intent, ...(input.hostBypass ? { hostBypass: input.hostBypass } : {}) } };
   }
   async getJob(input: GetJobInput) {
     this.record("getJob", input);

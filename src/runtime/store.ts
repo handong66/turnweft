@@ -64,7 +64,7 @@ function rowToJob(r: Row): Job {
   return {
     id: String(r.id), sessionId: String(r.session_id), requestId: String(r.request_id), intent: r.intent as Intent,
     promptDigest: String(r.prompt_digest), state: r.state as JobState, failureReason: s(r.failure_reason),
-    errorCode: s(r.error_code), grantRevision: n(r.grant_revision), policyId: s(r.policy_id), proposalId: s(r.proposal_id),
+    errorCode: s(r.error_code), grantRevision: n(r.grant_revision), policyId: s(r.policy_id), proposalId: s(r.proposal_id), hostBypass: s(r.host_bypass),
     ownerGeneration: n(r.owner_generation), acceptedAt: String(r.accepted_at), deliveredAt: s(r.delivered_at),
     startedAt: s(r.started_at), finishedAt: s(r.finished_at),
   };
@@ -136,6 +136,7 @@ export class Store {
     if (!lease.has("native_token")) this.db.exec("ALTER TABLE leases ADD COLUMN native_token TEXT");
     if (!cols("sessions").has("cwd")) this.db.exec("ALTER TABLE sessions ADD COLUMN cwd TEXT");
     if (!cols("jobs").has("proposal_id")) this.db.exec("ALTER TABLE jobs ADD COLUMN proposal_id TEXT");
+    if (!cols("jobs").has("host_bypass")) this.db.exec("ALTER TABLE jobs ADD COLUMN host_bypass TEXT");
     const pc = cols("proposals");
     for (const c of ["pkey", "decision", "decided_at", "dialog_token", "dialog_child"]) if (!pc.has(c)) this.db.exec(`ALTER TABLE proposals ADD COLUMN ${c} TEXT`);
     this.backfillProposalKeys();
@@ -230,9 +231,9 @@ export class Store {
   // ------------------------------------------------------------ jobs
   insertJob(x: Job & { prompt: string }) {
     this.db.prepare(`INSERT INTO jobs (id, session_id, request_id, intent, prompt, prompt_digest, state, grant_revision,
-      policy_id, proposal_id, accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      policy_id, proposal_id, host_bypass, accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(x.id, x.sessionId, x.requestId, x.intent, x.prompt, x.promptDigest, x.state, x.grantRevision ?? null,
-        x.policyId ?? null, x.proposalId ?? null, x.acceptedAt);
+        x.policyId ?? null, x.proposalId ?? null, x.hostBypass ?? null, x.acceptedAt);
   }
 
   /** Insert only if the session is still open, inside the write lock (submit vs close race). */

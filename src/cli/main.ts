@@ -14,7 +14,8 @@ import { PROVIDERS } from "../core/types.js";
 import type { Envelope, HostBinding, Intent, ProviderId } from "../core/types.js";
 import { boundedWait, confirmationRequired, startMcpServer } from "../mcp/server.js";
 import { failure, serviceFailure, success } from "../mcp/envelope.js";
-import { macosConfirm, type NativeConfirm } from "../mcp/native-dialog.js";
+import { macosConfirm, spawnDialogHelper, type NativeConfirm } from "../mcp/native-dialog.js";
+import { hostBypass } from "../runtime/host-mode.js";
 import { ownerToken, stopAndConfirm } from "../runtime/proc.js";
 import { createService } from "../runtime/factory.js";
 
@@ -111,10 +112,19 @@ export async function runDialog(service: TurnweftService, proposalId: string, io
   }
 }
 
+/** Host integrations the real CLI entry enables; tests run without them (no dialogs, no host-mode reads). */
+export interface CliHooks {
+  /** U21: the host's bypass signal, e.g. when Claude Code's shell tool runs `turnweft send` in a bypass conversation. */
+  hostBypass?: (host: HostBinding) => string | undefined;
+  /** U19: show the macOS confirmation dialog for a waiting job, as the MCP path does. */
+  showDialog?: (proposalId: string) => boolean;
+}
+
 export async function runCli(
   argv: string[],
   serviceOrFactory: TurnweftService | (() => Promise<TurnweftService>) = createService,
   io: CliIO = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr },
+  hooks: CliHooks = {},
 ): Promise<number> {
   let json = argv.includes("--json");
   let command: string | undefined;
@@ -210,7 +220,10 @@ export async function runCli(
         if (values["prompt-file"] !== undefined) prompt = await readFile(values["prompt-file"], "utf8");
         else { for await (const chunk of io.stdin) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); prompt = Buffer.concat(chunks).toString("utf8"); }
         required(prompt, "prompt");
-        const outcome = await service.submitTurn({ sessionId: values.session!, prompt, requestId, intent: (values.intent ?? "analyze") as Intent, host });
+        let bypass: string | undefined;
+        try { bypass = hooks.hostBypass?.(host); } catch { bypass = undefined; }
+        const outcome = await service.submitTurn({ sessionId: values.session!, prompt, requestId, intent: (values.intent ?? "analyze") as Intent, host, ...(bypass ? { hostBypass: bypass } : {}) });
+        if (outcome.kind === "awaiting_confirmation") hooks.showDialog?.(outcome.proposal.proposalId);
         envelope = outcome.kind === "accepted" ? success({ ...outcome, requestId, jobId: outcome.job.id, nextAction: "wait" })
           : outcome.kind === "awaiting_confirmation" ? success({ kind: "awaiting_confirmation", requestId, jobId: outcome.job.id, nextAction: "wait" },
               [text("waitingJob", { id: outcome.job.id, proposal: outcome.proposal.proposalId })])
@@ -263,5 +276,8 @@ export async function runCli(
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
-  process.exitCode = await runCli(process.argv.slice(2));
+  process.exitCode = await runCli(process.argv.slice(2), createService, undefined, {
+    hostBypass: (host) => hostBypass(host),
+    showDialog: (id) => spawnDialogHelper(id, fileURLToPath(import.meta.url)),
+  });
 }

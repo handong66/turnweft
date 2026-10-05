@@ -62,7 +62,9 @@ When the agent's mode is broader than your grant, the job is recorded as `waitin
 1. Turnweft first asks the host to show its own confirmation prompt. In testing, Claude Code 2.1.286 and the Codex 0.160.0 desktop app both declined it automatically without showing it.
 2. Turnweft then shows a macOS dialog naming the agent, project, mode and what it allows beyond your grant. The dialog waits for your choice; no answer never counts as a denial.
 3. **Allow** starts the waiting job without resubmitting. **Deny** cancels it (`confirmation_denied`). A proposal expires after 24 hours (`confirmation_expired`).
-4. You can also run `turnweft policy grant <proposalId>` in a terminal and type `yes` or `no`. It refuses non-terminal input and has no auto-approve flag, but it cannot tell who is typing: run it yourself rather than letting an agent with a terminal tool run it.
+4. `turnweft send` on the command line shows the same dialog. You can also run `turnweft policy grant <proposalId>` in a terminal and type `yes` or `no`. It refuses non-terminal input and has no auto-approve flag, but it cannot tell who is typing: run it yourself rather than letting an agent with a terminal tool run it.
+
+**Bypass conversations are not asked.** When the host conversation runs in its bypass mode, Turnweft authorizes the job directly: no proposal, no dialog. It reads only what the host itself records: in Claude Code, the latest `permissionMode` in the conversation transcript must be `bypassPermissions` (auto mode and every other mode still show the dialog); in Codex, the turn metadata must say `sandbox_mode: danger-full-access` (full access). This applies to that one job and is not remembered, so the same project in a non-bypass conversation still asks. Results state the actual mode and `authorizedBy`. Nothing the model passes can turn this on.
 
 Confirmations are stored per agent × project × intent and are not asked again while they stay valid; a new agent version or a change in what the mode allows asks again. List them with `turnweft policy list`; revoke one with `turnweft policy revoke <id>`.
 

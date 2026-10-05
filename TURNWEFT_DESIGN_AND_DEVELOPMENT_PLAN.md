@@ -73,6 +73,7 @@ AgentBridge 已有多个同领域项目；AgentRelay / `agent-relay` 也已有�
 | U18 | **U11 确认的第二通道：macOS 系统对话框**。实测 CC 桌面版会自动拒绝 MCP 确认框（4–6 ms 内返回 decline）。确认顺序改为：MCP elicitation → Turnweft 自己弹出的 macOS 对话框（默认“拒绝”，只有在剩余的宿主工具时限内点“允许”才算确认，`confirmedVia: native-dialog`）→ 终端 `turnweft policy grant`。对话框内容由 core 生成，模型看不到也无法应答。只支持 macOS；无人值守时用 `TURNWEFT_NO_NATIVE_DIALOG=1` 关闭。不采用链接式（url）确认。（2026-10-04） | §7.4 |
 | U19 | **确认时没有回应就一直等待，不默认拒绝**：缺少 U11 确认时，任务记录为 `waiting_confirmation` 并立即返回；macOS 对话框由独立的 `turnweft dialog <proposalId>` 进程弹出，不受工具调用时限限制，一直等用户选择。点“允许”（或终端输入 yes、宿主 elicitation 同意）后，等待中的任务自动开始，无需重新提交；点“拒绝”（或终端输入 no）则取消，`confirmation_denied`；只有提案过期（24 小时）才失败，`confirmation_expired`。同一会话中排在等待任务之后的任务按 FIFO 继续等待；同一 key 的待确认提案共用，避免重复弹窗。宿主 elicitation 只有明确选“否”并提交才算拒绝，关闭或 decline 都只是继续等待，不按响应快慢推断。对话框进程记录自身和 osascript 子进程的身份，接管前先确认旧对话框已关闭；没有任务再等这次确认（已取消、会话关闭）时对话框自动关闭，这不算决定。旧版状态库升级时补齐提案归类键并合并重复的待确认提案，保留最早过期的那个。（2026-10-04） | §7.4、§8.5 |
 | U20 | **开源发布**：MIT 许可证；公开仓库和 npm 包都叫 `turnweft`；README 以英文为主，另附中文版（README.zh-CN.md）；同时发布到 npm。私人仓库保留为完整开发记录，公开仓库只放一个干净的初始提交，不含 `m0/results/` 原始协议日志（其中录到了本机的 Agent 记忆、skill 列表和本机路径）。创建公开仓库、改名私人仓库和 npm 发布在准备好产物并经用户确认后执行；npm 登录由用户本人完成。（2026-10-04） | §15 M4 |
+| U21 | **宿主处于 bypass 模式时，由该模式授权，不再确认**：从开了 bypass 的宿主对话提交的任务直接放行，不生成提案、不弹窗；只对这一个任务有效，不保存为长期确认，同一项目在非 bypass 对话中照常确认。只认宿主自己写下的信号：Claude Code 读当前对话记录（`~/.claude/projects/<项目>/<会话 ID>.jsonl`）中最新的 `permissionMode`，只有 `bypassPermissions` 算数，`auto` 等其他模式照常弹窗；Codex 读每次调用附带的 `x-codex-turn-metadata.sandbox_mode`，只有 `danger-full-access`（完全访问）算数。读不到或不确定时按非 bypass 处理。模型提供的任何参数都不能设置它。结果写明实际档位，并注明 `authorizedBy`。另外，命令行 `turnweft send` 需要确认时也弹出 macOS 对话框，与 MCP 路径一致。（2026-10-05） | §7.4 |
 
 模型 ID 的核对范围：本机 Droid 0.233.0 的 `--list-tools` 校验接受 `glm-5.3-flash`（内置模型）；Dim 0.5.16 的 `dim model list` 列出了 `dimcode-api-oauth/deepseek-v4.1-flash`。两者都尚未用来运行任务。
 
@@ -382,9 +383,11 @@ ACP permission request 由 adapter 映射到现有 grant，能够明确匹配的
 **U11 的可信确认通道。** 确认必须发生在 provider 启动**之前**：
 
 1. **主路径：前台同步 MCP elicitation。** 在前台 `turnweft_delegate` 调用尚未返回时，由 Turnweft 生成确认内容（canonical project、provider、intent、具体档位、比 grant 多出的能力、CLI / adapter 能力快照），绑定本次 requestId 和随机 nonce，经宿主直接呈现给用户。只有匹配该请求的 `accept` 协议回复才能写入 policy。拒绝、取消、超时或路由失败时都不启动 provider；返回“需要确认”，由下一次前台调用重新发起。detached worker 不发 elicitation。
-2. **退路：外部终端 `turnweft policy grant`。** 它不是 MCP 工具；stdin 不是 TTY 或带自动同意参数时直接失败。哪个宿主在 M0 测不通 elicitation，该宿主就只用这条退路。
-3. **不算确认的情况**：宿主放行了 MCP 工具（可能来自预配置或自动审批；Codex 0.160.0 有 per-tool `approval_mode`，也有 `approval policy is never` 失败分支）；模型在对话里声称“用户已同意”；永不加入 allowlist 的专用工具被调用。模型不得提交或修改确认标志、确认来源、能力摘要和 policy revision。
-4. **威胁模型**：上述设计防止模型通过工具参数替用户确认；防不了已拥有同用户任意 shell 与文件权限的程序。要防后者，需要额外的用户在场验证和受保护凭据，不列入首版。
+2. **第二通道：macOS 对话框（U18、U19）。** 实测 CC 2.1.286 和 Codex 0.160.0 都自动拒绝 elicitation，所以实际起作用的是 Turnweft 自己弹出的系统对话框；它一直等用户选择，不会默认拒绝。MCP 和命令行 `turnweft send` 都会弹。
+3. **第三通道：外部终端 `turnweft policy grant`。** 它不是 MCP 工具；stdin 不是 TTY 或带自动同意参数时直接失败。
+4. **宿主 bypass 模式（U21）。** 宿主自己记录的 bypass 信号（CC 对话记录中的 `permissionMode: bypassPermissions`，Codex 的 `sandbox_mode: danger-full-access`）授权当次任务，不经上述通道，也不保存为 policy。
+5. **不算确认的情况**：宿主放行了 MCP 工具（可能来自预配置或自动审批；Codex 0.160.0 有 per-tool `approval_mode`，也有 `approval policy is never` 失败分支）；模型在对话里声称“用户已同意”或“当前是 bypass”；永不加入 allowlist 的专用工具被调用。模型不得提交或修改确认标志、确认来源、bypass 信号、能力摘要和 policy revision。
+6. **威胁模型**：上述设计防止模型通过工具参数替用户确认；防不了已拥有同用户任意 shell 与文件权限的程序（例如能改写对话记录的程序）。用户开 bypass 时，本来就已把这种权限交给宿主 Agent。要防后者，需要额外的用户在场验证和受保护凭据，不列入首版。
 
 **pending action（运行中的审批请求）** 必须持久保存，绑定 session、job、provider request ID 与 grant revision。worker 只负责登记；已经绑定的宿主在后续查询中取得请求并处理。没有宿主在线时，最多等到可配置的 `permissionTimeout`，之后取消当前 turn、保留 session。权限请求、业务提问和登录需求要分开建模。
 

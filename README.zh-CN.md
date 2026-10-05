@@ -62,7 +62,9 @@ codex plugin add turnweft@turnweft
 1. Turnweft 先请宿主弹出确认框。实测 CC 2.1.286 和 Codex 0.160.0 桌面版都会自动回绝，不显示给你。
 2. 于是 Turnweft 在屏幕上弹出 macOS 对话框，写明 Agent、项目、档位和超出授权的部分。对话框会一直等你选择，不会因为没有回应就默认拒绝。
 3. 点“允许”后，等待中的任务自动开始，不需要重新提交；点“拒绝”则取消任务（`confirmation_denied`）。提案 24 小时后过期（`confirmation_expired`）。
-4. 也可以在终端运行 `turnweft policy grant <proposalId>`，输入 `yes` 允许、`no` 拒绝。它拒绝非终端输入，也没有自动同意的参数，但分辨不出是谁在输入：请自己运行，不要让带终端工具的 Agent 代为执行。
+4. 命令行 `turnweft send` 需要确认时，同样弹出这个对话框。也可以在终端运行 `turnweft policy grant <proposalId>`，输入 `yes` 允许、`no` 拒绝。它拒绝非终端输入，也没有自动同意的参数，但分辨不出是谁在输入：请自己运行，不要让带终端工具的 Agent 代为执行。
+
+**开了 bypass 的对话不再询问。** 宿主对话处于 bypass 模式时，Turnweft 直接放行任务：不生成提案，也不弹窗。它只认宿主自己记录的信号：Claude Code 要求对话记录里最新的 `permissionMode` 是 `bypassPermissions`（auto 模式和其他模式照常弹窗）；Codex 要求本轮元数据里的 `sandbox_mode` 是 `danger-full-access`（完全访问）。放行只对这一个任务有效，不会记住，所以同一项目在没开 bypass 的对话里照常询问。结果写明实际档位和 `authorizedBy`。模型传入的任何参数都无法打开这个放行。
 
 确认结果按 Agent × 项目 × 意图保存，在仍然有效期间同类任务不再询问；Agent 版本变化或档位允许的范围变化时会重新询问。`turnweft policy list` 查看，`turnweft policy revoke <id>` 撤销。
 
