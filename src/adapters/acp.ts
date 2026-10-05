@@ -93,6 +93,12 @@ export class AcpConnection implements Connection {
     return id ? this.effective[id] : undefined;
   }
 
+  /** Same session, same process: like changing the level in the agent's own CLI. */
+  async setEffort(value: string) {
+    if (!this.sessionId) throw new Error("session not open");
+    await this.applyEffort(this.thoughtLevelId(), value);
+  }
+
   private handleUpdate(u: Json) {
     this.lastUpdateAt = Date.now();
     switch (u.sessionUpdate) {
@@ -171,13 +177,18 @@ export class AcpConnection implements Connection {
     };
   }
 
-  /** Responses and config_option_update carry the full option list, so it replaces the previous one. */
-  private absorb(options: unknown) {
-    if (!Array.isArray(options) || !options.length) return;
+  /**
+   * Responses and config_option_update carry the full option list, so it replaces the previous one; an empty
+   * list means no options. Only a missing list (Droid answers set with {}) leaves the state as it was.
+   * Returns whether a list was present.
+   */
+  private absorb(options: unknown): boolean {
+    if (!Array.isArray(options)) return false;
     const next = optionMeta(options);
     for (const id of Object.keys(this.meta)) if (!(id in next)) delete this.effective[id];
     this.meta = next;
     Object.assign(this.effective, configMap(options));
+    return true;
   }
 
   private async apply(configId: string, value: string) {
@@ -207,8 +218,10 @@ export class AcpConnection implements Connection {
     try {
       r = await this.conn.setSessionConfigOption({ sessionId: this.sessionId, configId: id, value } as any) as Json;
     } catch (e) { throw reject(`setting ${id} to "${value}" failed: ${errText(e)}`); }
-    if (Array.isArray(r?.configOptions) && r.configOptions.length) this.absorb(r.configOptions);
-    else await this.waitForUpdate(seen, 3000); // Droid answers {} and reports through config_option_update
+    // Droid answers {} and reports through config_option_update. Without a fresh answer the cache proves nothing.
+    if (!this.absorb(r?.configOptions) && !(await this.waitForUpdate(seen, 3000))) {
+      throw reject(`the agent did not report its thinking level after setting ${id} to "${value}"`);
+    }
     // Droid answers an unknown value with {} and keeps another level (live run), so only the read-back counts.
     if (this.effective[id] !== value) throw reject(`requested effort "${value}" but the agent reports "${this.effective[id] ?? "nothing"}"`);
   }
@@ -221,9 +234,11 @@ export class AcpConnection implements Connection {
     while (Date.now() < until && Date.now() - this.lastUpdateAt < quietMs) await new Promise((r) => setTimeout(r, 50));
   }
 
-  private async waitForUpdate(seen: number, ms: number) {
+  /** True once a config_option_update arrived after `seen`. */
+  private async waitForUpdate(seen: number, ms: number): Promise<boolean> {
     const until = Date.now() + ms;
     while (Date.now() < until && this.configUpdates === seen) await new Promise((r) => setTimeout(r, 50));
+    return this.configUpdates !== seen;
   }
 
   /** Droid answers set_config_option with {} and reports via config_option_update (M0 §3). */

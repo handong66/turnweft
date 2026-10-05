@@ -211,9 +211,10 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
   let effort: JobResult["effort"];
   try {
     // Reopen when the tier changed or the installed CLI no longer matches the running process (round 2, 7).
-    // U23: so does a thinking level that drifted from the request between turns; the reopen re-applies it.
-    const effortDrift = session.requestedEffort !== undefined && x.getConn()?.currentEffort() !== session.requestedEffort;
-    if (x.getConn() && (x.getTier() !== tier.tier || x.getVersion() !== probe.cliVersion || effortDrift)) {
+    // U23: a launch-flag provider (agy) whose level differs from the request resumes the same conversation with
+    // the new flag. ACP providers change it in the running session below, without a restart.
+    const relaunchForEffort = !x.getConn()?.setEffort && session.requestedEffort !== undefined && x.getConn()?.currentEffort() !== session.requestedEffort;
+    if (x.getConn() && (x.getTier() !== tier.tier || x.getVersion() !== probe.cliVersion || relaunchForEffort)) {
       // A connection that cannot be proven stopped must never be replaced by a second one (round 3, finding 1).
       if (!(await x.closeConn())) {
         finish("failed", { errorCode: "provider_not_stopped", failureReason: "the previous provider process could not be confirmed stopped; session frozen" });
@@ -229,6 +230,15 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
       }
       store.updateSession(session.id, { nativeSessionId: opened.nativeSessionId, cliVersion: probe.cliVersion, capabilities: adapter.capabilities });
       x.setLastOpen({ effective: opened.effective, model: opened.model });
+    }
+    // U23: the level was changed with session update, or drifted, since this connection was opened.
+    const live = x.getConn()!;
+    if (session.requestedEffort !== undefined && live.currentEffort() !== session.requestedEffort && live.setEffort) {
+      try { await live.setEffort(session.requestedEffort); } catch (e) {
+        // Not a connection problem: the session and its process stay as they are; nothing is sent.
+        if (e instanceof AdapterError && e.code === "invalid_effort") { finish("failed", { errorCode: e.code, failureReason: e.message }); return "done"; }
+        throw e;
+      }
     }
     // Read the connection's live snapshot, not a cached one: config can change between turns (round 3, finding 6).
     model = x.getLastOpen().model;

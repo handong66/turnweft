@@ -1,7 +1,7 @@
 // TurnweftService implementation over the shared store. Front ends (MCP, CLI) are thin: they record
 // requests here and wake a session worker; they never own provider processes (§6.2).
 import { renderMessage } from "../core/i18n.js";
-import type { ConfirmPolicyInput, CreateSessionInput, GetJobInput, JobView, SubmitTurnInput, SubmitTurnOutcome, TurnweftService } from "../core/service.js";
+import type { ConfirmPolicyInput, CreateSessionInput, GetJobInput, JobView, SubmitTurnInput, SubmitTurnOutcome, TurnweftService, UpdateSessionInput } from "../core/service.js";
 import { PROVIDERS, TERMINAL_JOB_STATES, type HostBinding, type Job, type PolicyProposal, type ProbeResult, type ProviderId, type Session, type UserPolicy } from "../core/types.js";
 import { getAdapter } from "../adapters/registry.js";
 import { loadConfig } from "./config.js";
@@ -12,6 +12,10 @@ import { isOwnerGone, nativeStopped, ownerToken as procOwnerToken, stopAndConfir
 import { FROZEN_PREFIX } from "./worker.js";
 import { canonicalRoot, PathError, workingDir } from "./project.js";
 import { Store } from "./store.js";
+
+function nonEmpty(key: string, value: unknown) {
+  if (value !== undefined && (typeof value !== "string" || !value.trim())) throw new ServiceError("invalid_arguments", `${key} must be a non-empty string when given`);
+}
 
 export class ServiceError extends Error {
   constructor(public code: string, message: string) { super(message); }
@@ -42,9 +46,8 @@ export class LocalService implements TurnweftService {
   async createSession(input: CreateSessionInput): Promise<Session> {
     if (!PROVIDERS.includes(input.provider)) throw new ServiceError("unknown_provider", `unknown provider ${input.provider}`);
     // An empty value would otherwise be dropped silently and the agent would run at its default.
-    for (const [key, value] of [["model", input.model], ["effort", input.effort]] as const) {
-      if (value !== undefined && (typeof value !== "string" || !value.trim())) throw new ServiceError("invalid_arguments", `${key} must be a non-empty string when given`);
-    }
+    nonEmpty("model", input.model);
+    nonEmpty("effort", input.effort);
     let root: string;
     let cwd: string;
     try { cwd = workingDir(input.cwd); root = canonicalRoot(cwd); } catch (e) {
@@ -76,6 +79,18 @@ export class LocalService implements TurnweftService {
     if (s.state === "closed") throw new ServiceError("session_closed", "session is closed");
     if (!s.hostBindings.some((b) => sameHost(b, host))) this.store.updateSession(id, { hostBindings: [...s.hostBindings, host] });
     return this.store.getSession(id)!;
+  }
+
+  async updateSession(input: UpdateSessionInput): Promise<Session> {
+    nonEmpty("effort", input.effort);
+    if (input.effort === undefined) throw new ServiceError("invalid_arguments", "effort is required");
+    const s = this.mustSession(input.sessionId);
+    if (s.state === "closed") throw new ServiceError("session_closed", "session is closed");
+    // Same rule as submitting: a host changes a session only after an explicit attach (§8.2).
+    if (!s.hostBindings.some((b) => sameHost(b, input.host))) throw new ServiceError("not_attached", "this host is not bound to the session; call attach first");
+    // Recorded only; the worker applies it before the next turn and verifies the read-back there.
+    this.store.updateSession(s.id, { requestedEffort: input.effort });
+    return this.store.getSession(s.id)!;
   }
 
   async closeSession(id: string, policy: "reject_if_busy" | "cancel_running" = "reject_if_busy"): Promise<Session> {

@@ -178,7 +178,7 @@ export class Store {
     return (this.db.prepare(sql).all(...args) as Row[]).map(rowToSession);
   }
 
-  updateSession(id: string, patch: Partial<Pick<Session, "nativeSessionId" | "state" | "brokenReason" | "hostBindings" | "capabilities" | "cliVersion">>) {
+  updateSession(id: string, patch: Partial<Pick<Session, "nativeSessionId" | "state" | "brokenReason" | "hostBindings" | "capabilities" | "cliVersion" | "requestedEffort">>) {
     const cols: string[] = []; const args: (string | null)[] = [];
     const set = (c: string, v: string | null) => { cols.push(`${c} = ?`); args.push(v); };
     if ("nativeSessionId" in patch) set("native_session_id", patch.nativeSessionId ?? null);
@@ -187,6 +187,7 @@ export class Store {
     if ("hostBindings" in patch) set("host_bindings", JSON.stringify(patch.hostBindings ?? []));
     if ("capabilities" in patch) set("capabilities", patch.capabilities ? JSON.stringify(patch.capabilities) : null);
     if ("cliVersion" in patch) set("cli_version", patch.cliVersion ?? null);
+    if ("requestedEffort" in patch) set("requested_effort", patch.requestedEffort ?? null);
     set("updated_at", now());
     this.db.prepare(`UPDATE sessions SET ${cols.join(", ")} WHERE id = ?`).run(...args, id);
   }

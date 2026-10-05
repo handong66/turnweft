@@ -9,10 +9,11 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 ### Added
 - Sessions can set a thinking level: `effort` on `turnweft_session create`, `--effort` on `turnweft session create`. The value is the agent's own (Dim `thought_level`, Droid and Grok `reasoning_effort`, OpenCode `effort`, agy `--effort`) and is re-applied after the model whenever the session is opened or resumed. Before, every agent ran at its default; Dim implementation sessions were always `auto`.
 - Results and the `config.readback` event report `effort` (requested and effective). `turnweft_agents` lists `effortConfig` among each agent's capabilities.
+- The thinking level can be changed mid-conversation: `turnweft_session` action `update`, or `turnweft session update <id> --effort <level>`. It applies from the next turn, in the same agent session, so the context is kept. Dim, Droid, Grok and OpenCode change it inside the running session; agy, which only takes it at launch, is restarted on the same conversation.
 - `scripts/live-smoke.mjs` accepts `--effort`.
 
 ### Changed
-- A thinking level the agent doesn't offer with the current model fails the turn with `invalid_effort` before the prompt is sent. The error lists the offered values. Turnweft never runs a turn at a different level: Droid silently ignores unknown values, and OpenCode resets the level when the model changes, so the level is set last, always sent even when it already looks right, and checked on read-back. If the level drifts between turns, Turnweft reopens the session and sets it again before the next turn.
+- A thinking level the agent doesn't offer with the current model fails the turn with `invalid_effort` before the prompt is sent. The error lists the offered values. Turnweft never runs a turn at a different level: Droid silently ignores unknown values, and OpenCode resets the level when the model changes, so the level is set last, always sent even when it already looks right, and only a fresh answer from the agent counts as the read-back. If the level drifts between turns, Turnweft sets it again in the running session before the next turn. A rejected level fails only that turn; the session stays usable.
 - `turnweft_session create` and `turnweft session create` reject an empty `model` or `effort`. Before, an empty model was dropped silently and the agent used its default.
 
 ## [0.1.0-alpha.2] - 2026-10-05

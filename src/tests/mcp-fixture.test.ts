@@ -1,5 +1,5 @@
 import type {
-  ConfirmPolicyInput, CreateSessionInput, GetJobInput, SubmitTurnInput, SubmitTurnOutcome, TurnweftService,
+  ConfirmPolicyInput, CreateSessionInput, GetJobInput, SubmitTurnInput, SubmitTurnOutcome, TurnweftService, UpdateSessionInput,
 } from "../core/service.js";
 import type { HostBinding, Job, PolicyProposal, Session, UserPolicy } from "../core/types.js";
 
@@ -42,6 +42,7 @@ export class FakeService implements TurnweftService {
   async listSessions(filter: Parameters<TurnweftService["listSessions"]>[0]) { this.record("listSessions", filter); return [session]; }
   async getSession(id: string) { this.record("getSession", id); return this.foundSession; }
   async attachSession(id: string, host: HostBinding) { this.record("attachSession", { id, host }); return { ...session, hostBindings: [host] }; }
+  async updateSession(input: UpdateSessionInput) { this.record("updateSession", input); return { ...session, requestedEffort: input.effort }; }
   async closeSession(id: string, closePolicy?: "reject_if_busy" | "cancel_running") { this.record("closeSession", { id, policy: closePolicy }); return { ...session, state: "closed" as const }; }
   async submitTurn(input: SubmitTurnInput): Promise<SubmitTurnOutcome> {
     this.record("submitTurn", input); this.submissions.push(input);

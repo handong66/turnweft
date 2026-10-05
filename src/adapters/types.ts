@@ -63,6 +63,11 @@ export interface Connection {
   currentEffective(): Record<string, string>;
   /** U23: the thinking level in effect now (live read-back; for launch-flag providers, the flag passed). */
   currentEffort(): string | undefined;
+  /**
+   * U23: change the thinking level inside the running session, verified by read-back. Absent when the provider
+   * only takes it at launch (agy); the runtime then resumes the same native session with the new flag.
+   */
+  setEffort?(value: string): Promise<void>;
 }
 
 /** Called the moment the provider process is spawned, before any protocol exchange (round 3, finding 4). */

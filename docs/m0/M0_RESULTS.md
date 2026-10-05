@@ -41,6 +41,7 @@ session ID 格式不统一：Dim 为 `sess_<ts>_<rand>`，OpenCode 为 `ses_…`
 
 - Dim 的 `thought_level` 只作用于当前 session：设成 max 后新开 session（同目录或别的目录）仍是 auto，没有可改的持久默认值。
 - 因此 Turnweft 的顺序是：权限档位 → 模型 → 思考强度，并按当前模型的可选值校验、再读回核对。
+- **会话内调整**：四个 ACP 目标都能在运行中的会话里直接 `set_config_option` 改强度，不需要重启进程（Dim 约 200 ms，Droid / Grok / OpenCode 100 ms 以内）；非法值被拒绝后保持原强度。Droid 即使设成当前值也会发 `config_option_update`，所以"只认新回报"不会多等。
 
 ## 3. 真实任务（ACP，消耗额度）
 

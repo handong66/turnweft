@@ -83,3 +83,32 @@ test("U23 review: an option that disappears after a model switch is not validate
 test("U23 review: an empty effort is a request, not an omission", async () => {
   await assert.rejects(open("dim", { effort: "" }), invalid(/"" is not offered/));
 });
+
+test("U23: setEffort changes the level inside the running session and verifies it", async () => {
+  const seen: string[] = [];
+  await open("dim", {}, async (c) => {
+    seen.push(await realLevel(c));
+    await c.setEffort("max");
+    seen.push(await realLevel(c), String(c.currentEffort()));
+    await assert.rejects(c.setEffort("bogus"), invalid(/"bogus" is not offered/));
+    seen.push(await realLevel(c));
+  });
+  assert.deepEqual(seen, ["level=auto", "level=max", "max", "level=max"], "a rejected value leaves the session as it was");
+});
+
+test("U23 review 2: the category decides, even against an unrelated option with a known id", async () => {
+  let real = "";
+  const r = await open("custom", { effort: "low" }, async (c) => { real = await realLevel(c); });
+  assert.equal(real, "level=low", "think_depth was set");
+  assert.deepEqual(r.effort, { requested: "low", effective: "low" });
+  assert.equal(r.effective.effort, "on", "the unrelated option named effort was left alone");
+});
+
+test("U23 review 2: without a fresh read-back the cache proves nothing, even when it shows the requested value", async () => {
+  // silent keeps "high" (its default) cached and never answers; requesting that same value must still fail.
+  await assert.rejects(open("silent", { effort: "high" }), invalid(/did not report its thinking level/));
+});
+
+test("U23 review 2: an empty option list is a complete list, not a missing one", async () => {
+  await assert.rejects(open("emptied", { effort: "high" }), invalid(/agent reports "nothing"/));
+});

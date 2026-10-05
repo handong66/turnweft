@@ -38,6 +38,7 @@ export type SessionAction =
   | ({ action: "create" } & Omit<CreateSessionInput, "host">)
   | { action: "list"; scope?: "this_host" | "project"; canonicalRoot?: string; provider?: ProviderId; includeClosed?: boolean }
   | { action: "get" | "attach"; sessionId: string }
+  | { action: "update"; sessionId: string; effort: string }
   | { action: "close"; sessionId: string; policy?: "reject_if_busy" | "cancel_running" };
 
 const string = { type: "string", minLength: 1 } as const;
@@ -55,13 +56,14 @@ const sessionSchema: Tool["inputSchema"] = {
       allOf: [{ if: { properties: { scope: { const: "project" } }, required: ["scope"] }, then: { required: ["canonicalRoot"] } }],
     },
     ...["get", "attach"].map(action => object({ action: { const: action }, sessionId: string }, ["action", "sessionId"])),
+    object({ action: { const: "update" }, sessionId: string, effort: string }, ["action", "sessionId", "effort"]),
     object({ action: { const: "close" }, sessionId: string, policy: { enum: ["reject_if_busy", "cancel_running"] } }, ["action", "sessionId"]),
   ],
 };
 const turnSchema = object({ sessionId: string, prompt: string, requestId: string }, ["sessionId", "prompt", "requestId"]);
 const tools: Tool[] = [
   { name: "turnweft_agents", description: "List targets, versions, capabilities and problems; does not submit a model task.", inputSchema: object({ refresh: boolean }), annotations: { readOnlyHint: true } },
-  { name: "turnweft_session", description: "Create/list/get/attach/close an exact session. Names are labels, not resume handles. model and effort (thinking level, in the agent's own values) are set only when the user asks; an unsupported effort fails the first turn and lists the values offered. List scope defaults to this_host; project requires canonicalRoot and finds sessions across hosts before explicit attach.", inputSchema: sessionSchema },
+  { name: "turnweft_session", description: "Create/list/get/attach/close an exact session. Names are labels, not resume handles. model and effort (thinking level, in the agent's own values) are set only when the user asks. update changes effort for the following turns in the same session, keeping its context. An unsupported effort fails the next turn with invalid_effort, lists the values offered, and sends nothing. List scope defaults to this_host; project requires canonicalRoot and finds sessions across hosts before explicit attach.", inputSchema: sessionSchema },
   { name: "turnweft_ask", description: "Submit analyze intent in the background. Generate and save requestId before calling; reuse it for retries. If the result is awaiting_confirmation, keep calling turnweft_job in the same turn until the job starts (up to ~10 minutes); never resubmit.", inputSchema: turnSchema },
   { name: "turnweft_delegate", description: "Submit implement intent in the background, with human U11 confirmation when required. Save requestId before calling. If the result is awaiting_confirmation, a Turnweft dialog is waiting for the user: keep calling turnweft_job (waitMs 25000, afterSeq = previous nextSeq) in the same turn until the job leaves waiting_confirmation (up to ~10 minutes); never resubmit.", inputSchema: turnSchema },
   { name: "turnweft_job", description: "Read job state, events and paged results. Defaults to immediate return; waits are bounded. ok describes the query, not job success.", inputSchema: object({ jobId: string, afterSeq: integer, waitMs: integer, includeResult: boolean, resultOffset: integer, resultLimit: { type: "integer", minimum: 1 } }, ["jobId"]), annotations: { readOnlyHint: true } },
@@ -175,6 +177,7 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
               envelope = session ? success(session) : failure("session_not_found", `Session not found: ${action.sessionId}`); break;
             }
             case "attach": envelope = success(await service.attachSession(action.sessionId, host)); break;
+            case "update": envelope = success(await service.updateSession({ sessionId: action.sessionId, effort: action.effort, host })); break;
             case "close": envelope = success(await service.closeSession(action.sessionId, action.policy)); break;
           }
           break;

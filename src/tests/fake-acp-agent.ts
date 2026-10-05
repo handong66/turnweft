@@ -8,12 +8,15 @@
 //   stubborn  like droid, but keeps its level even for offered values (read-back mismatch)
 //   staleload loadSession answers with a level ("high") newer than the real one; replay then reports "auto"
 //   vanish    model m2 has no thinking-level option at all
+//   silent    set answers {} and never reports (no fresh read-back)
+//   emptied   set answers with an empty option list
+//   custom    the level is "think_depth" (category thought_level); "effort" is an unrelated option
 // prompt replies with the real level, so tests can check what the agent actually runs with.
 import { Readable, Writable } from "node:stream";
 import { AgentSideConnection, RequestError, ndJsonStream } from "@agentclientprotocol/sdk";
 
 const style = process.env.FAKE_ACP_STYLE ?? "dim";
-const effortId = style === "dim" || style === "staleload" || style === "vanish" ? "thought_level" : style === "opencode" ? "effort" : "reasoning_effort";
+const effortId = style === "custom" ? "think_depth" : style === "dim" || style === "staleload" || style === "vanish" ? "thought_level" : style === "opencode" ? "effort" : "reasoning_effort";
 const levels: Record<string, string[]> = effortId === "thought_level"
   ? { m1: ["auto", "none", "high", "max"], m2: ["auto", "high", "max"] }
   : { m1: ["low", "medium", "high", "xhigh"], m2: ["low", "high", "max"] };
@@ -23,8 +26,11 @@ const select = (id: string, category: string | undefined, values: string[]) => (
   id, name: id, type: "select", currentValue: state[id], ...(category ? { category } : {}),
   options: values.map((value) => ({ value, name: value })),
 });
-const options = () => [
+let emptied = false;
+state.effort ??= "on"; // the unrelated "effort" option of the custom style
+const options = () => emptied ? [] : [
   select("model", "model", ["m1", "m2"]),
+  ...(style === "custom" ? [select("effort", "other", ["on", "off", "low", "high"])] : []),
   ...(style === "none" || (style === "vanish" && state.model === "m2") ? [] : [select(effortId, style === "legacy" ? undefined : "thought_level", levels[state.model!]!)]),
 ];
 
@@ -53,6 +59,8 @@ const conn = new AgentSideConnection((c) => ({
       if (!ok && style === "dim") throw RequestError.invalidParams({ configId: p.configId, value }, "Unknown ACP thought level value");
       if (ok && style !== "stubborn") state[effortId] = value;
     }
+    if (style === "silent") return {} as never;
+    if (style === "emptied") { emptied = true; return { configOptions: [] } as never; }
     if (style === "droid" || style === "stubborn") {
       setTimeout(() => void c.sessionUpdate({ sessionId: "fake-acp-1", update: { sessionUpdate: "config_option_update", configOptions: options() } } as never), 50);
       return {} as never;

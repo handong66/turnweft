@@ -35,6 +35,10 @@ class FakeConnection implements Connection {
 
   currentEffective() { return { ...this.snapshot }; }
   currentEffort() { return this.snapshot.effort; }
+  async setEffort(value: string) {
+    if (!FAKE_EFFORTS.includes(value)) throw new AdapterError("invalid_effort", `effort "${value}" is not offered; fake offers ${FAKE_EFFORTS.join(", ")}`);
+    this.snapshot.effort = value;
+  }
 
   private exit(signal: string | null) {
     if (this.hasExited) return;
@@ -60,7 +64,7 @@ class FakeConnection implements Connection {
       this.id = `fake-${randomUUID()}`;
       writeFileSync(join(histDir(), `${this.id}.json`), JSON.stringify({ memory: {} }));
     }
-    this.snapshot = { mode: input.tier.tier, effort: input.effort ?? "auto" };
+    this.snapshot = { mode: input.tier.tier, effort: input.effort ?? "auto", conn: randomUUID() };
     return {
       nativeSessionId: this.id, loaded: Boolean(input.nativeSessionId), effective: { ...this.snapshot },
       model: { requested: input.model, effective: input.model ?? "fake-default" },

@@ -124,7 +124,7 @@ You can name a model if you want one ("use Droid with glm-5.3-flash"), and a thi
 | OpenCode | `low`, `high`, `max`, `default` (some models: `medium`) | ACP option `effort` |
 | agy | `low`, `medium`, `high`, `xhigh`, `max` | `--effort` at launch |
 
-Model and thinking level are fixed when the session is created and re-applied whenever it is resumed. If the agent doesn't offer the level with that model, the first task fails with `invalid_effort` before anything is sent, and the error lists the levels it does offer. Results report the level requested and the level the agent reports.
+You can also change the thinking level mid-conversation ("let Dim think harder from now on"). It applies from the next task, in the same agent session, so the agent keeps its context. Dim, Droid, Grok and OpenCode change it inside the running session, like their own CLIs do. agy only accepts the level at launch, so Turnweft restarts agy on the same conversation with the new level. The level is re-applied whenever a session is resumed. If the agent doesn't offer the level with its current model, that task fails with `invalid_effort` before anything is sent, the error lists the levels it does offer, and the session stays usable. Results report the level requested and the level the agent reports.
 
 ## Permissions and safety
 
@@ -218,6 +218,7 @@ The plugins cover normal use. The CLI is useful for scripting and inspection:
 
 ```bash
 turnweft session create --agent droid --cwd .        # returns a tws_… session ID
+turnweft session update tws_… --effort high          # thinking level for the following tasks
 echo "Fix the bug in src/math.js and run the tests" | turnweft send --session tws_… --intent implement
 turnweft job wait twj_… --include-result
 turnweft cancel twj_…
@@ -242,7 +243,7 @@ turnweft session close tws_…
 - Grok's actual permission mode can't be read back; Turnweft infers it from `~/.grok/config.toml`. OpenCode's effective permission rules can't be read back either. Results say so.
 - OpenCode's ACP doesn't report provider errors such as an exhausted quota, so Turnweft only detects them through the inactivity timeout.
 - Setting a Dim model explicitly changes that workspace's default model for good. Results mention it.
-- A thinking level can't be changed on an existing session; create a new one. agy doesn't report its level back, so for agy the result shows the level that was passed at launch.
+- agy doesn't report its thinking level back, so for agy the result shows the level that was passed at launch.
 - Claude Code and Codex are hosts, not targets: Turnweft doesn't delegate work to them.
 
 ## Uninstall

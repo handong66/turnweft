@@ -165,6 +165,7 @@ export async function runCli(
           case "create": only(["agent", "cwd", "name", "model", "effort"], 2); required(agent(), "--agent"); required(values.cwd, "--cwd"); break;
           case "list": only(["cwd", "agent", "include-closed"], 2); agent(); break;
           case "get": case "attach": only([], 3); required(id, "sessionId"); break;
+          case "update": only(["effort"], 3); required(id, "sessionId"); if (values.effort === undefined) throw new Error("--effort is required"); break;
           case "close": only(["policy"], 3); required(id, "sessionId"); if (values.policy !== undefined && !["reject_if_busy", "cancel_running"].includes(values.policy)) throw new Error("Invalid --policy"); break;
           default: throw new Error("Invalid session action");
         }
@@ -208,6 +209,7 @@ export async function runCli(
             envelope = session ? success(session) : failure("session_not_found", `Session not found: ${id}`); break;
           }
           case "attach": envelope = success(await service.attachSession(id!, host)); break;
+          case "update": envelope = success(await service.updateSession({ sessionId: id!, effort: values.effort!, host })); break;
           case "close": envelope = success(await service.closeSession(id!, values.policy as "reject_if_busy" | "cancel_running" | undefined)); break;
           default: throw new Error("Invalid session action");
         }

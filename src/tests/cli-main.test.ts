@@ -156,6 +156,7 @@ test("session, cancellation and policy commands use only service methods", async
     [["session", "create", "--agent", "droid", "--cwd", "/project"], "createSession"],
     [["session", "list"], "listSessions"], [["session", "get", "tws_session"], "getSession"],
     [["session", "attach", "tws_session"], "attachSession"], [["session", "close", "tws_session"], "closeSession"],
+    [["session", "update", "tws_session", "--effort", "high"], "updateSession"],
     [["cancel", "twj_job"], "cancelJob"], [["policy", "list"], "listPolicies"], [["policy", "revoke", "twpolicy_policy"], "revokePolicy"],
   ];
   for (const [argv, method] of cases) {

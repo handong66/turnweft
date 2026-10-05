@@ -20,6 +20,14 @@ export interface CreateSessionInput {
   host: HostBinding;
 }
 
+/** U23: change a live session's settings. Takes effect from the next turn, in the same native session. */
+export interface UpdateSessionInput {
+  sessionId: string;
+  /** New thinking level, in the provider's own values. */
+  effort: string;
+  host: HostBinding;
+}
+
 export interface SubmitTurnInput {
   sessionId: string;
   intent: Intent;
@@ -89,6 +97,11 @@ export interface TurnweftService {
   getSession(sessionId: string): Promise<Session | undefined>;
   /** Explicit cross-host attach (§8.2). Verifies project and owner state. */
   attachSession(sessionId: string, host: HostBinding): Promise<Session>;
+  /**
+   * U23: set the thinking level for the following turns. ACP agents change it inside the running session;
+   * agy, which only takes it at launch, resumes the same conversation with the new flag. Context is kept.
+   */
+  updateSession(input: UpdateSessionInput): Promise<Session>;
   /** Default policy "reject_if_busy"; "cancel_running" cancels the running turn first. */
   closeSession(sessionId: string, policy?: "reject_if_busy" | "cancel_running"): Promise<Session>;
 

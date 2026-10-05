@@ -53,13 +53,14 @@ test("strict per-action session schemas reject missing parameters and model appr
   const list = await client.listTools();
   assert.deepEqual(list.tools.map(tool => tool.name), ["turnweft_agents", "turnweft_session", "turnweft_ask", "turnweft_delegate", "turnweft_job", "turnweft_cancel"]);
   assert.equal(list.tools.find(tool => tool.name === "turnweft_session")?.annotations?.readOnlyHint, undefined);
-  assert.equal((list.tools.find(tool => tool.name === "turnweft_session")!.inputSchema.oneOf as unknown[]).length, 5);
+  assert.equal((list.tools.find(tool => tool.name === "turnweft_session")!.inputSchema.oneOf as unknown[]).length, 6);
   for (const args of [
     { action: "create", provider: "droid" }, { action: "create", cwd: "/project" },
     ...["get", "attach", "close"].map(action => ({ action })),
     { action: "list", sessionId: "not-allowed" }, { action: "create", provider: "unknown", cwd: "/project" },
     { action: "close", sessionId: "id", policy: "unsafe" }, { action: "get", sessionId: "" },
-    { action: "create", provider: "droid", cwd: "/project", effort: "" }, { action: "create", provider: "droid", cwd: "/project", effort: 3 },
+    { action: "create", provider: "droid", cwd: "/project", effort: "" },
+    { action: "update", sessionId: "tws_session" }, { action: "update", sessionId: "tws_session", effort: "" }, { action: "update", effort: "high" }, { action: "create", provider: "droid", cwd: "/project", effort: 3 },
   ]) assert.equal((await call(client, "turnweft_session", args)).error?.code, "invalid_arguments");
   for (const args of [{ ...turn, requestId: undefined }, { ...turn, approved: true }, { ...turn, confirmed: true }, { ...turn, host: { hostKind: "cli" } }]) {
     assert.equal((await call(client, "turnweft_delegate", args)).ok, false);
@@ -69,11 +70,13 @@ test("strict per-action session schemas reject missing parameters and model appr
 
 test("session actions route to the service and do not invent missing sessions", async t => {
   const { client, service } = await setup(t);
-  for (const args of [{ action: "create", provider: "droid", cwd: "/project", model: "explicit", effort: "xhigh" }, { action: "list" }, ...["get", "attach", "close"].map(action => ({ action, sessionId: "tws_session" }))]) {
+  for (const args of [{ action: "create", provider: "droid", cwd: "/project", model: "explicit", effort: "xhigh" }, { action: "list" }, ...["get", "attach", "close"].map(action => ({ action, sessionId: "tws_session" })), { action: "update", sessionId: "tws_session", effort: "max" }]) {
     assert.equal((await call(client, "turnweft_session", args)).ok, true);
   }
-  assert.deepEqual(service.calls.map(call => call.method), ["createSession", "listSessions", "getSession", "attachSession", "closeSession"]);
+  assert.deepEqual(service.calls.map(call => call.method), ["createSession", "listSessions", "getSession", "attachSession", "closeSession", "updateSession"]);
   assert.equal((service.calls[0]!.input as { effort?: string }).effort, "xhigh", "effort reaches the service unchanged");
+  const update = service.calls[5]!.input as { sessionId: string; effort: string; host?: unknown };
+  assert.equal(update.sessionId, "tws_session"); assert.equal(update.effort, "max"); assert.ok(update.host, "the calling host is passed for the attach check");
   service.foundSession = undefined;
   assert.equal((await call(client, "turnweft_session", { action: "get", sessionId: "missing" })).error?.code, "session_not_found");
 });

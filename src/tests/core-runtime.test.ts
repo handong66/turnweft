@@ -951,15 +951,56 @@ test("U23: upgrading adds requested_effort to an existing sessions table", async
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("U23 review: a level that drifts between turns is re-applied before the next turn, and results show the live level", async () => {
+const readbackOf = (v: { events: Array<{ type: string; payload: unknown }> }) =>
+  (v.events.find((e) => e.type === "config.readback")!.payload as { effective: Record<string, string> }).effective;
+
+test("U23 review: a level that drifts between turns is set again in the same running session", async () => {
   const s = await svc.createSession({ provider: "droid", cwd: repo(), host, effort: "high" });
   const a = await waitDone((await submit(s.id, "SAY:one\nEFFORT:low", "analyze")).id);
   assert.equal(a.job.state, "succeeded");
   const b = await waitDone((await submit(s.id, "SAY:two", "analyze")).id);
   assert.equal(b.job.state, "succeeded");
-  assert.deepEqual(b.result!.effort, { requested: "high", effective: "high" }, "reopened and re-applied, not the cached value");
-  const readback = b.events.find((e) => e.type === "config.readback")!.payload as { effective: Record<string, string> };
-  assert.equal(readback.effective.effort, "high", "the live snapshot itself is back at the requested level");
+  assert.deepEqual(b.result!.effort, { requested: "high", effective: "high" }, "re-applied, not the cached value");
+  assert.equal(readbackOf(b).effort, "high", "the live snapshot itself is back at the requested level");
+  assert.equal(readbackOf(b).conn, readbackOf(a).conn, "no restart: the same connection");
+});
+
+test("U23: update changes the level for the next turn in the same session, keeping its context", async () => {
+  // Keep this session's worker from idling out between turns (1.5 s here), so the connection identity shows
+  // whether the level change itself restarted anything.
+  process.env.TURNWEFT_IDLE_RELEASE_MS = "60000";
+  const s = await svc.createSession({ provider: "droid", cwd: repo(), host });
+  const a = await waitDone((await submit(s.id, "REMEMBER:tok-u23", "analyze")).id).finally(() => { process.env.TURNWEFT_IDLE_RELEASE_MS = "1500"; });
+  assert.deepEqual(a.result!.effort, { effective: "auto" });
+  assert.equal((await svc.updateSession({ sessionId: s.id, effort: "low", host })).requestedEffort, "low");
+  const b = await waitDone((await submit(s.id, "RECALL", "analyze")).id);
+  assert.deepEqual(b.result!.effort, { requested: "low", effective: "low" });
+  assert.match(b.result!.finalText, /tok-u23/, "same native session: earlier context is still there");
+  assert.equal(readbackOf(b).conn, readbackOf(a).conn, "changed in the running session, not by a restart");
+
+  // An unsupported level fails that turn only; the session and its connection stay usable.
+  await svc.updateSession({ sessionId: s.id, effort: "bogus", host });
+  // Same intent as the other turns: switching analyze/implement changes the tier, which reopens by design.
+  const c = await waitDone((await submit(s.id, "REMEMBER:overwritten", "analyze")).id);
+  assert.equal(c.job.errorCode, "invalid_effort");
+  assert.equal(c.job.deliveredAt, undefined, "nothing was sent");
+  assert.notEqual((await svc.getSession(s.id))!.state, "broken");
+  await svc.updateSession({ sessionId: s.id, effort: "high", host });
+  const d = await waitDone((await submit(s.id, "RECALL", "analyze")).id);
+  assert.equal(d.job.state, "succeeded");
+  assert.deepEqual(d.result!.effort, { requested: "high", effective: "high" });
+  assert.match(d.result!.finalText, /tok-u23/);
+  assert.equal(readbackOf(d).conn, readbackOf(a).conn);
+  await svc.closeSession(s.id); // ends the long-idle worker
+});
+
+test("U23: update needs an attached host, an open session and a non-empty level", async () => {
+  const s = await svc.createSession({ provider: "droid", cwd: repo(), host });
+  const code = (c: string) => (e: Error & { code?: string }) => e.code === c;
+  await assert.rejects(svc.updateSession({ sessionId: s.id, effort: "low", host: otherHost }), code("not_attached"));
+  await assert.rejects(svc.updateSession({ sessionId: s.id, effort: " ", host }), code("invalid_arguments"));
+  await svc.closeSession(s.id);
+  await assert.rejects(svc.updateSession({ sessionId: s.id, effort: "low", host }), code("session_closed"));
 });
 
 test("U23 review: empty model or effort is rejected instead of silently using the default", async () => {

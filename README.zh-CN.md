@@ -124,7 +124,7 @@ codex plugin add turnweft@turnweft
 | OpenCode | `low`、`high`、`max`、`default`（部分模型有 `medium`） | ACP 配置项 `effort` |
 | agy | `low`、`medium`、`high`、`xhigh`、`max` | 启动参数 `--effort` |
 
-模型和思考强度在创建会话时确定，每次恢复会话都会重新设置。Agent 在该模型下不提供这个强度时，第一个任务会以 `invalid_effort` 失败，此时什么都还没发出，错误信息里列出它实际提供的取值。结果里同时写明请求的强度和 Agent 读回的强度。
+对话中途也能调整思考强度，比如“接下来让 Dim 想得更深一点”。调整从下一个任务开始生效，用的还是同一个 Agent 会话，之前的上下文都在。Dim、Droid、Grok、OpenCode 直接在运行中的会话里改，和在它们自己的 CLI 里改一样；agy 只在启动时接受强度，Turnweft 会带上新强度重启 agy，并接回同一个对话。每次恢复会话都会重新设置强度。Agent 在当前模型下不提供这个强度时，该任务会以 `invalid_effort` 失败，此时什么都还没发出，错误信息里列出它实际提供的取值，会话本身仍可继续使用。结果里同时写明请求的强度和 Agent 读回的强度。
 
 ## 权限与安全
 
@@ -220,6 +220,7 @@ Agent 的模式超出你的授权时，任务先记为 `waiting_confirmation`（
 
 ```bash
 turnweft session create --agent droid --cwd .        # 返回 tws_… 会话 ID
+turnweft session update tws_… --effort high          # 之后任务的思考强度
 echo "修复 src/math.js 的 bug 并跑测试" | turnweft send --session tws_… --intent implement
 turnweft job wait twj_… --include-result
 turnweft cancel twj_…
@@ -244,7 +245,7 @@ turnweft session close tws_…
 - Grok 的实际权限模式无法读回，只能按 `~/.grok/config.toml` 判断；OpenCode 实际生效的权限规则也无法读回。结果里会写明这一点。
 - OpenCode 的 ACP 不回传 provider 错误（例如额度用尽），Turnweft 只能靠无活动超时发现。
 - 显式指定 Dim 的模型会永久改变该工作区的默认模型，结果里会说明。
-- 已有会话不能改思考强度，需要新建会话。agy 不回报思考强度，结果里显示的是启动时传入的值。
+- agy 不回报思考强度，结果里显示的是启动时传入的值。
 - Claude Code 和 Codex 是宿主，不是委派对象：Turnweft 不会把工作交给它们。
 
 ## 卸载

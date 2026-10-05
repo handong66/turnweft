@@ -52,8 +52,9 @@ export class AgyConnection implements Connection {
       new Promise<void>((r) => { this.initWaiter = r; }),
       new Promise<void>((r) => setTimeout(r, 20000)),
       this.exited.then(() => {
-        const tail = this.stderrTail.slice(-300);
-        throw new AdapterError(/invalid --effort/i.test(tail) ? "invalid_effort" : "provider_error", `agy exited during startup: ${tail}`);
+        // Classify on the whole captured output: a long rejected value can push the marker out of the shown tail.
+        const code = /invalid --effort/i.test(this.stderrTail) ? "invalid_effort" : "provider_error";
+        throw new AdapterError(code, `agy exited during startup: ${this.stderrTail.slice(-300)}`);
       }),
     ]);
     permissionMode = this.initPermissionMode ?? permissionMode;
