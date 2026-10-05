@@ -125,7 +125,14 @@ CC 的 `auto` 模式及其他非 bypass 模式照常弹窗，由 `src/tests/host
 - 命令行不再接受 bypass 信号；
 - bypass 授权独立保存，并绑定提交时的权限指纹。
 
-修复后的实测结果见下一节。
+修复后（93570f3）的实测结果如下，CC 插件从 GitHub 重装，带钩子：
+
+| 宿主与模式 | 结果 |
+| --- | --- |
+| CC，`bypassPermissions` | ✅ 直接执行，文件已写入，`authorizedBy: claude-code:bypassPermissions` |
+| CC，`default` | ✅ `waiting_confirmation`，文件未写入 |
+| CC，`default`，先用 Bash 写入伪造的 bypass 钩子记录，再调用 | ✅ 伪造记录被钩子用真实模式覆盖，仍为 `waiting_confirmation`，文件未写入 |
+| Codex，`-s danger-full-access` | ✅ 直接执行，文件已写入 |
 
 ## 4. 插件启动器
 
