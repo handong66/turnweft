@@ -878,3 +878,31 @@ test("U21: the host's bypass mode authorizes one job without a confirmation; not
     if (again.kind === "awaiting_confirmation") await svc.cancelJob(again.job.id);
   } finally { delete process.env.TURNWEFT_FAKE_EXCESS; }
 });
+
+test("round 11 findings 4+5: a bypass authorization survives a policy revocation but not a capability change", async () => {
+  process.env.TURNWEFT_FAKE_EXCESS = "1";
+  try {
+    const s0 = await svc.createSession({ provider: "grok", cwd: repo(), host });
+    // A confirmed policy exists; a bypass submission still records its own authorization.
+    const a = await svc.submitTurn({ sessionId: s0.id, intent: "implement", prompt: "SLEEP:1200", requestId: req(), host });
+    if (a.kind !== "awaiting_confirmation") throw new Error(a.kind);
+    const pol = await svc.confirmPolicy({ proposalId: a.proposal.proposalId, nonce: a.proposal.nonce, via: "native-dialog" });
+    const b = await svc.submitTurn({ sessionId: s0.id, intent: "implement", prompt: "WRITE:b.txt", requestId: req(), host, hostBypass: "claude-code:bypassPermissions" });
+    if (b.kind !== "accepted") throw new Error(b.kind);
+    await svc.revokePolicy(pol.id);                                  // revoked while b waits behind a
+    await waitDone(a.job.id);
+    const vb = await waitDone(b.job.id);
+    assert.equal(vb.job.state, "succeeded", "revoking the policy does not undo the bypass authorization");
+    assert.equal(vb.result?.permission?.authorizedBy, "claude-code:bypassPermissions");
+    // The tier changes between submit and run: the bypass covered the old capabilities only.
+    const c0 = await svc.submitTurn({ sessionId: s0.id, intent: "implement", prompt: "SLEEP:1200", requestId: req(), host, hostBypass: "claude-code:bypassPermissions" });
+    const c = await svc.submitTurn({ sessionId: s0.id, intent: "implement", prompt: "WRITE:c.txt", requestId: req(), host, hostBypass: "claude-code:bypassPermissions" });
+    if (c0.kind !== "accepted" || c.kind !== "accepted") throw new Error(`${c0.kind} ${c.kind}`);
+    wf(join(HOME, "fake-tier.txt"), "-v2");
+    await waitDone(c0.job.id);
+    const vc = await waitDone(c.job.id);
+    assert.equal(vc.job.state, "failed");
+    assert.equal(vc.job.errorCode, "needs_confirmation");
+    assert.match(vc.job.failureReason ?? "", /bypass authorization/);
+  } finally { delete process.env.TURNWEFT_FAKE_EXCESS; rmSync(join(HOME, "fake-tier.txt"), { force: true }); }
+});

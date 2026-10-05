@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__.*turnweft__turnweft_(ask|delegate)",
+        "hooks": [
+          { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/host-mode-hook.mjs\"", "timeout": 10 }
+        ]
+      }
+    ]
+  }
+}

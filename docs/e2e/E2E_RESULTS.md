@@ -111,6 +111,22 @@ OpenCode 说明：`opencode-go/deepseek-v4.1-flash` 在测试时报 `Go usage li
 
 CC 的 `auto` 模式及其他非 bypass 模式照常弹窗，由 `src/tests/host-mode.test.ts` 覆盖。
 
+第 11 轮交叉评审（Codex）发现上面这一版的信号可以伪造：
+
+- 它用正则扫描对话记录，会误认模型写在工具参数里的 `permissionMode` 字样；
+- 命令行路径下，可以通过环境变量指向伪造的、或别的对话的记录；
+- 对话记录异步写入，模式切换后可能滞后；
+- 已有长期确认时，bypass 授权会被丢弃；
+- 排队期间档位变化，bypass 任务仍会执行新档位。
+
+修复后：
+
+- CC 改用插件的 PreToolUse 钩子取得本次调用时的 `permission_mode`；
+- 命令行不再接受 bypass 信号；
+- bypass 授权独立保存，并绑定提交时的权限指纹。
+
+修复后的实测结果见下一节。
+
 ## 4. 插件启动器
 
 - 运行时已安装（`npm link`，`/opt/homebrew/bin/turnweft` 为指向 `dist/cli/main.js` 的符号链接）：启动器找到运行时，并成功启动 `turnweft mcp`（上面第 2 节即经由它运行）。

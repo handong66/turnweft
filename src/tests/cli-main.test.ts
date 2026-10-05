@@ -245,15 +245,13 @@ test("plugin manifests carry the package version", async () => {
   }
 });
 
-test("U21/U19: send passes the host's bypass signal and shows the dialog when a confirmation is needed", async () => {
-  const h = harness("Implement it"); const service = new FakeService();
+test("U19/U21: send never takes a bypass signal and shows the dialog when a confirmation is needed", async () => {
   const dialogs: string[] = [];
-  assert.equal(await runCli(["send", "--session", "tws_session", "--intent", "implement", "--json"], service, h.io,
-    { hostBypass: () => "claude-code:bypassPermissions", showDialog: (id) => { dialogs.push(id); return true; } }), 0);
-  assert.equal(service.submissions.at(-1)!.hostBypass, "claude-code:bypassPermissions");
+  const h = harness("Implement it"); const service = new FakeService();
+  assert.equal(await runCli(["send", "--session", "tws_session", "--intent", "implement", "--json"], service, h.io, { showDialog: (id) => { dialogs.push(id); return true; } }), 0);
+  assert.equal(service.submissions.at(-1)!.hostBypass, undefined, "the CLI environment is not a trusted host signal");
   assert.equal(dialogs.length, 0, "accepted: no dialog");
   const waiting = harness("Implement it"); const w = new FakeService(); w.awaitingConfirmation = true;
-  assert.equal(await runCli(["send", "--session", "tws_session", "--intent", "implement", "--json"], w, waiting.io,
-    { hostBypass: () => undefined, showDialog: (id) => { dialogs.push(id); return true; } }), 0);
+  assert.equal(await runCli(["send", "--session", "tws_session", "--intent", "implement", "--json"], w, waiting.io, { showDialog: (id) => { dialogs.push(id); return true; } }), 0);
   assert.deepEqual(dialogs, [proposal.proposalId], "the CLI path shows the same dialog as MCP");
 });

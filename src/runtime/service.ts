@@ -129,14 +129,16 @@ export class LocalService implements TurnweftService {
       this.store.expireStaleTx();
       const m = matchPolicy(this.store, key);
       // U21: the host's bypass mode authorizes this one job; nothing is stored, so non-bypass conversations still ask.
-      const bypass = m.ok ? undefined : input.hostBypass;
+      // It is kept even when a policy matches, so revoking that policy later does not undo it (round 11, 4), and it is
+      // bound to the capability digest it authorized (round 11, 5).
+      const bypass = tier.excess.length && input.hostBypass ? input.hostBypass : undefined;
       const proposal = m.ok || bypass ? undefined : this.store.pendingProposalTx(
         { provider: s.provider, canonicalRoot: s.canonicalRoot, intent: input.intent, tier: tier.tier, capabilityDigest: capabilityDigest(s.provider, probe, tier) },
         () => buildProposal(key), { requestId: input.requestId, sessionId: s.id });
       const job: Job = {
         id: newJobId(), sessionId: s.id, requestId: input.requestId, intent: input.intent, promptDigest: digest,
         state: proposal ? "waiting_confirmation" : "queued", policyId: m.ok ? m.policy?.id : undefined,
-        proposalId: proposal?.proposalId, ...(bypass ? { hostBypass: bypass } : {}), acceptedAt: now(),
+        proposalId: proposal?.proposalId, ...(bypass ? { hostBypass: bypass, hostBypassDigest: capabilityDigest(s.provider, probe, tier) } : {}), acceptedAt: now(),
       };
       const inserted = this.store.insertJobCheckedTx({ ...job, prompt: input.prompt });
       if (inserted === "session_closed") return { kind: "rejected", code: "session_closed", message: "session was closed" };

@@ -15,7 +15,7 @@ import { PROVIDERS } from "../core/types.js";
 import type { Envelope, HostBinding, PolicyProposal, ProviderId } from "../core/types.js";
 import { failure, serviceFailure, success } from "./envelope.js";
 import { spawnDialogHelper } from "./native-dialog.js";
-import { hostBypass } from "../runtime/host-mode.js";
+import { hostBypass, pruneHookRecords, type CallContext } from "../runtime/host-mode.js";
 import { dirname as pathDirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,7 +31,7 @@ export interface McpServerOptions {
   /** Second U11 channel (U19): start the detached dialog helper for a proposal. startMcpServer enables the macOS one. */
   showDialog?: (proposalId: string) => boolean;
   /** U21: read the host's own bypass signal for a submission. startMcpServer enables the real detector. */
-  hostBypass?: (host: HostBinding, meta: Record<string, unknown> | undefined) => string | undefined;
+  hostBypass?: (host: HostBinding, meta: Record<string, unknown> | undefined, call: CallContext) => string | undefined;
 }
 
 export type SessionAction =
@@ -173,7 +173,8 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
         case "turnweft_ask":
         case "turnweft_delegate": {
           let bypass: string | undefined;
-          try { bypass = opts.hostBypass?.(host, request.params._meta); } catch { bypass = undefined; } // unreadable: ask as usual
+          try { bypass = opts.hostBypass?.(host, request.params._meta, { toolName: request.params.name, requestId: String((input as { requestId?: unknown }).requestId ?? "") }); }
+          catch { bypass = undefined; } // unreadable: ask as usual
           const turn: SubmitTurnInput = { ...(input as Pick<SubmitTurnInput, "sessionId" | "prompt" | "requestId">), host, intent: request.params.name === "turnweft_ask" ? "analyze" : "implement", ...(bypass ? { hostBypass: bypass } : {}) };
           let outcome = await service.submitTurn(turn);
           if (outcome.kind === "needs_confirmation") {
@@ -273,7 +274,8 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
 
 export async function startMcpServer(service: TurnweftService, opts: McpServerOptions = {}): Promise<Server> {
   const cliMain = join(pathDirname(fileURLToPath(import.meta.url)), "..", "cli", "main.js");
-  const server = createMcpServer(service, { showDialog: (id) => spawnDialogHelper(id, cliMain), hostBypass: (host, meta) => hostBypass(host, meta), ...opts });
+  const server = createMcpServer(service, { showDialog: (id) => spawnDialogHelper(id, cliMain), hostBypass: (host, meta, call) => hostBypass(host, meta, call), ...opts });
+  pruneHookRecords();
   await server.connect(new StdioServerTransport());
   return server;
 }

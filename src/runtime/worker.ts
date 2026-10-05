@@ -7,7 +7,7 @@ import { getAdapter } from "../adapters/registry.js";
 import { AdapterError, type Adapter, type AdapterEvent, type Connection, type TierSpec } from "../adapters/types.js";
 import { loadConfig } from "./config.js";
 import { now } from "./ids.js";
-import { matchPolicy } from "./policy.js";
+import { capabilityDigest, matchPolicy } from "./policy.js";
 import { isOwnerGone, nativeStopped, ownerToken, stopAndConfirm } from "./proc.js";
 import { ensureWorkerFor } from "./spawn.js";
 import { diffSnapshots, snapshot } from "./project.js";
@@ -184,19 +184,24 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
   const ev = (type: Parameters<Store["appendEventFenced"]>[2], source: Parameters<Store["appendEventFenced"]>[3], payload: Record<string, unknown>) =>
     store.appendEventFenced(job.id, generation, type, source, payload);
 
-  // A24 and finding 3: re-check the U11 policy against the tier and versions that will actually run.
-  if (job.policyId && store.getPolicy(job.policyId)?.revokedAt) {
+  // A24 and finding 3: re-check the U11 policy against the tier and versions that will actually run. A U21 bypass
+  // authorization stands on its own, but only for the exact capabilities it authorized (round 11, 4/5).
+  const probe = await adapter.probe();
+  const tier: TierSpec = adapter.tierFor(job.intent, probe);
+  const bypassValid = Boolean(job.hostBypass) && job.hostBypassDigest === capabilityDigest(session.provider, probe, tier);
+  if (job.policyId && store.getPolicy(job.policyId)?.revokedAt && !bypassValid) {
     finish("failed", { errorCode: "policy_revoked", failureReason: "the U11 policy for this turn was revoked" });
     return "done";
   }
-  const probe = await adapter.probe();
-  const tier: TierSpec = adapter.tierFor(job.intent, probe);
   const m = matchPolicy(store, { provider: session.provider, canonicalRoot: session.canonicalRoot, intent: job.intent, probe, tier });
   const matchedPolicyId = m.ok ? m.policy?.id : undefined;
-  if (!m.ok && !job.hostBypass) {
-    finish("failed", { errorCode: "needs_confirmation", failureReason: `tier or provider version changed since submission (now ${tier.tier}, ${probe.cliVersion}); resubmit to confirm again` });
+  if (!m.ok && !bypassValid) {
+    finish("failed", { errorCode: "needs_confirmation", failureReason: job.hostBypass
+      ? `permission tier or provider version changed since the bypass authorization (now ${tier.tier}, ${probe.cliVersion}); resubmit`
+      : `tier or provider version changed since submission (now ${tier.tier}, ${probe.cliVersion}); resubmit to confirm again` });
     return "done";
   }
+  const authorizedBy = !matchedPolicyId && tier.excess.length && bypassValid ? job.hostBypass : undefined;
 
   // Open or re-open: the tier is re-applied on every open/load (§7.4); a tier change means reopen.
   let effective: Record<string, string>;
@@ -364,10 +369,10 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
     sessionId: session.id, jobId: job.id, provider: session.provider, cliVersion: probe.cliVersion,
     adapterVersion: adapter.adapterVersion, cwd: session.cwd, nativeSessionId: sessionNow.nativeSessionId,
     state, stopReason: outcome?.stopReason, finalText: text, resultComplete: !error || state === "cancelled", truncated,
-    permission: { effectiveMode: JSON.stringify(effective), policyId: matchedPolicyId ?? job.policyId, ...(!m.ok && job.hostBypass ? { authorizedBy: job.hostBypass } : {}), excessOverGrant: tier.excess.map(message => renderMessage(message)), answeredRequests: answered },
+    permission: { effectiveMode: JSON.stringify(effective), policyId: matchedPolicyId ?? (authorizedBy ? undefined : job.policyId), ...(authorizedBy ? { authorizedBy } : {}), excessOverGrant: tier.excess.map(message => renderMessage(message)), answeredRequests: answered },
     model, files, toolCalls: toolCalls.slice(-200),
   };
-  finish(state, { errorCode, failureReason, policyId: matchedPolicyId ?? job.policyId }, result, { stopReason: outcome?.stopReason });
+  finish(state, { errorCode, failureReason, policyId: matchedPolicyId ?? (authorizedBy ? undefined : job.policyId) }, result, { stopReason: outcome?.stopReason });
   store.setSessionStateUnlessClosed(session.id, lost && !sessionNow.nativeSessionId ? "broken" : "ready");
   // A connection whose close already started is never reused (round 2, finding 4).
   return lost || conn.hasExited || closeStarted ? "connection_lost" : "done";

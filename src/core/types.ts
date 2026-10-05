@@ -148,8 +148,10 @@ export interface Job {
   policyId?: string;
   /** Set while the job waits for a U11 confirmation (state waiting_confirmation). */
   proposalId?: string;
-  /** U21: authorized by the submitting host's bypass mode instead of a stored U11 policy. */
+  /** U21: authorized by the submitting host's bypass mode, independent of any stored U11 policy. */
   hostBypass?: string;
+  /** Capability digest the bypass authorized; the worker runs on bypass only while it still matches (round 11, 5). */
+  hostBypassDigest?: string;
   ownerGeneration?: number;
   acceptedAt: string;
   deliveredAt?: string;

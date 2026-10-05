@@ -6,5 +6,6 @@
     "name": "handong66"
   },
   "license": "MIT",
-  "repository": "https://github.com/handong66/turnweft"
+  "repository": "https://github.com/handong66/turnweft",
+  "hooks": "./hooks/hooks.json"
 }
