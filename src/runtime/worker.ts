@@ -190,7 +190,9 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
   const tier: TierSpec = adapter.tierFor(job.intent, probe);
   const bypassValid = Boolean(job.hostBypass) && job.hostBypassDigest === capabilityDigest(session.provider, probe, tier);
   if (job.policyId && store.getPolicy(job.policyId)?.revokedAt && !bypassValid) {
-    finish("failed", { errorCode: "policy_revoked", failureReason: "the U11 policy for this turn was revoked" });
+    finish("failed", { errorCode: "policy_revoked", failureReason: job.hostBypass
+      ? "the U11 policy for this turn was revoked, and the bypass authorization no longer matches the permission tier or provider version"
+      : "the U11 policy for this turn was revoked" });
     return "done";
   }
   const m = matchPolicy(store, { provider: session.provider, canonicalRoot: session.canonicalRoot, intent: job.intent, probe, tier });

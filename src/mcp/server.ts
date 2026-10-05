@@ -137,6 +137,15 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const validate = validators.get(request.params.name);
     if (!validate) return toolResult(failure("unknown_tool", `Unknown tool: ${request.params.name}`));
+    // U21: look up (and consume) the host's bypass record for this exact call before validating, so a record left
+    // by a rejected call can never authorize a later one (round 12, 2).
+    let bypass: string | undefined;
+    if (request.params.name === "turnweft_ask" || request.params.name === "turnweft_delegate") {
+      const raw = (request.params.arguments ?? {}) as Record<string, unknown>;
+      const bindHost = hostBinding(request.params._meta, server.getClientVersion()?.name, connectionId);
+      try { bypass = opts.hostBypass?.(bindHost, request.params._meta, { toolName: request.params.name, args: { sessionId: raw.sessionId, prompt: raw.prompt, requestId: raw.requestId } }); }
+      catch { bypass = undefined; } // unreadable: ask as usual
+    }
     const args = validate(request.params.arguments ?? {});
     if (!args.valid) return toolResult(failure("invalid_arguments", args.errorMessage));
     const input = args.data;
@@ -172,9 +181,6 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
         }
         case "turnweft_ask":
         case "turnweft_delegate": {
-          let bypass: string | undefined;
-          try { bypass = opts.hostBypass?.(host, request.params._meta, { toolName: request.params.name, requestId: String((input as { requestId?: unknown }).requestId ?? "") }); }
-          catch { bypass = undefined; } // unreadable: ask as usual
           const turn: SubmitTurnInput = { ...(input as Pick<SubmitTurnInput, "sessionId" | "prompt" | "requestId">), host, intent: request.params.name === "turnweft_ask" ? "analyze" : "implement", ...(bypass ? { hostBypass: bypass } : {}) };
           let outcome = await service.submitTurn(turn);
           if (outcome.kind === "needs_confirmation") {

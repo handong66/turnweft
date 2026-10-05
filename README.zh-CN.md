@@ -64,7 +64,7 @@ codex plugin add turnweft@turnweft
 3. 点“允许”后，等待中的任务自动开始，不需要重新提交；点“拒绝”则取消任务（`confirmation_denied`）。提案 24 小时后过期（`confirmation_expired`）。
 4. 命令行 `turnweft send` 需要确认时，同样弹出这个对话框。也可以在终端运行 `turnweft policy grant <proposalId>`，输入 `yes` 允许、`no` 拒绝。它拒绝非终端输入，也没有自动同意的参数，但分辨不出是谁在输入：请自己运行，不要让带终端工具的 Agent 代为执行。
 
-**开了 bypass 的对话不再询问。** 宿主对话处于 bypass 模式时，Turnweft 直接放行任务：不生成提案，也不弹窗。它只认宿主为这一次调用给出的信号。Claude Code：插件自带的 PreToolUse 钩子会在每次 `turnweft_ask` / `turnweft_delegate` 调用前，从 Claude Code 拿到当前对话的权限模式，必须是 `bypassPermissions`（auto 模式和其他模式照常弹窗）。Codex：本次调用附带的元数据里，`sandbox_mode` 必须是 `danger-full-access`（完全访问）。放行只对这一个任务、以及提交时的权限范围有效，不会记住，所以同一项目在没开 bypass 的对话里照常询问。命令行 `turnweft send` 永远不会自动放行。结果写明实际档位和 `authorizedBy`。
+**开了 bypass 的对话不再询问。** 宿主对话处于 bypass 模式时，Turnweft 直接放行任务：不生成提案，也不弹窗。它只认宿主为这一次调用给出的信号。Claude Code：插件自带的 PreToolUse 钩子会在每次 `turnweft_ask` / `turnweft_delegate` 调用前，从 Claude Code 拿到当前对话的权限模式，并按这一次调用（工具和任务参数）记下，15 秒内有效，只用一次。模式必须是 `bypassPermissions`（auto 模式和其他模式照常弹窗）。Codex：本次调用附带的元数据里，`sandbox_mode` 必须是 `danger-full-access`（完全访问）。放行只对这一个任务、以及提交时的权限范围有效，不会记住，所以同一项目在没开 bypass 的对话里照常询问。命令行 `turnweft send` 永远不会自动放行。结果写明实际档位和 `authorizedBy`。
 
 确认结果按 Agent × 项目 × 意图保存，在仍然有效期间同类任务不再询问；Agent 版本变化或档位允许的范围变化时会重新询问。`turnweft policy list` 查看，`turnweft policy revoke <id>` 撤销。
 
