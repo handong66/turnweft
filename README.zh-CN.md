@@ -27,6 +27,8 @@ Turnweft 把这些统一成一种用法：你待在熟悉的助手里，另一�
 
 ## 用起来是什么样
 
+下面的对话只是示意，实际措辞取决于你用的 Agent 和模型。
+
 ### 不离开对话，拿到第二意见
 
 > **你**（在 Claude Code 里）：让 Grok 审一下我刚改的登录逻辑，别改任何东西。
@@ -41,7 +43,7 @@ Grok 读的是你项目里的真实文件。因为你要的是审查，它什么
 >
 > **Claude**：Droid 修好了两个 bug，这一轮改动的文件是 `src/math.js`。你自己还没提交的 `NOTES.md` 改动是之前就有的，没有动。我自己跑了一遍测试：2 个通过，0 个失败。
 
-结果会把“这个 Agent 本轮改的文件”和“你原本就有的未提交改动”分开列出来。Claude 也会自己跑测试，不会只听 Agent 说一句“测试通过了”。
+Turnweft 会在这一轮前后各拍一次 git 快照，把“这一轮里变动的文件”和“你原本就有的未提交改动”分开列出来。它分不出是谁改的：如果 Agent 干活时你也在改同一个目录，你的改动也会出现在里面。插件还会要求 Claude 自己跑测试，不只听 Agent 说一句“测试通过了”。
 
 ### 接着上次聊
 
@@ -60,7 +62,7 @@ Grok 读的是你项目里的真实文件。因为你要的是审查，它什么
 1. **装一次**：运行 `npm install -g turnweft`，再给 Claude Code 和/或 Codex 装上插件（见[快速开始](#快速开始)）。
 2. **用大白话提要求**：比如“问问 OpenCode 这个模块是怎么组织的”“让 agy 实现 CSV 导出”，不用学新命令。
 3. **需要时确认一次**：某个 Agent 第一次在某个项目里改文件时，可能会弹出确认框。它会一直等你选择，你不回应也不算拒绝。
-4. **拿到经过核实的结果**：你会看到 Agent 的回答、它改了哪些文件，以及它实际用的权限模式。Claude 或 Codex 会先检查一遍，再告诉你做完了。
+4. **检查结果**：你会看到 Agent 的回答、这一轮里变动了哪些文件，以及它实际用的权限模式。插件会要求 Claude 或 Codex 先核实一遍（比如自己跑测试）再说做完了。Agent 说“做完了”只是它的说法，不等于证明。
 5. **随时追问**：几分钟后也好，几天后也好，问同一个 Agent，它都记得之前的工作。
 6. **一切在你掌控之中**：可以取消正在跑的任务，查看或撤销以前的授权，也能清楚看到每个 Agent 被允许做什么。
 
@@ -116,11 +118,11 @@ codex plugin add turnweft@turnweft
 
 ## 权限与安全
 
-- **要分析时就只读。** 审查和提问类的任务，只要 Agent 有只读或“先问再做”的模式，就用这种模式运行。例外是 Grok 的配置设成全部自动批准时，Grok 无法被限制为只读，Turnweft 会如实说明，并请你确认。
+- **要分析时就只读。** 审查和提问类的任务，只要 Agent 有只读或“先问再做”的模式，就用这种模式运行。Grok 是例外：Turnweft 无法核实 Grok 实际的权限模式，所以 Grok 的任务即使只是分析也要确认一次；如果你的 Grok 配置设成全部自动批准，它就完全无法被限制为只读，确认时会写明这一点。
 - **更宽的模式只确认一次。** 有些 Agent 只能用超出你授权的模式改代码，比如自动批准命令、或者跳过它自己的权限检查。这时会弹出 macOS 对话框，同一个 Agent、项目和任务类型只问一次。Agent 版本变了，或者这个模式允许的范围变大了，会重新询问。
 - **开了 bypass 的对话不问。** Claude Code 只认 `bypassPermissions`，auto 模式和其他模式照常弹窗；Codex 只认完全访问（`danger-full-access`）。Turnweft 从 Claude Code 或 Codex 本身得知当前模式，从不听信模型的说法。这种放行只对当次任务有效，不会被记住。
 - **每次结果都如实交代权限。** 结果里会写明 Agent 实际用的模式、这个模式超出你授权的部分，以及是谁授权的。
-- **不会意外执行两次。** 任务交出去之后如果连接断了，任务会标记为 `in_doubt`（待核对），交给你检查，不会自动重发。
+- **不会意外执行两次。** 任务交出去之后，如果和 Agent 的连接断了，任务会标记为 `in_doubt`（待核对），交给你检查，不会自动重发。关掉 Claude Code 或 Codex 不会停止正在跑的任务，它会在后台继续，之后可以再查看。
 - **只在本机运行。** Turnweft 的状态保存在 `~/.turnweft`，它自己不发出任何网络请求。各 Agent 照常和它们自己的服务通信。
 
 Turnweft 做不到的：
@@ -155,7 +157,7 @@ Claude Code / Codex ──MCP──▶ turnweft mcp ──▶ 共享状态库（
 
 - **一个运行时，两个轻量插件。** npm 包是唯一的运行时。两个插件各自只包含 MCP 注册、一份教助手如何使用 Turnweft 的 Skill，以及一个小启动器。CC 插件还多一个钩子，用来上报当前对话的权限模式。找不到运行时的时候，插件只提供一个安装说明工具。
 - **会话与任务。** 每个会话绑定一个原生 Agent 会话。每次请求都是一个后台任务，由调用方提供 `requestId`，重试时返回原任务。同一会话里的任务按顺序执行；同一项目的写入任务即使来自不同会话，也一个一个来。
-- **原生权限，设置后读回。** 每次打开或续接 Agent 会话时，Turnweft 都会设置 Agent 自己的权限模式并读回核对。读回的结果对不上，任务就不运行。
+- **原生权限，能读回的都读回。** 每次打开或续接 Agent 会话时，Turnweft 都会设置 Agent 自己的权限模式；对能报告当前模式的 Agent，还会读回核对，对不上任务就不运行。Grok 的模式只能从它的配置文件推断，无法读回；OpenCode 只核对模式，不核对它完整的权限规则。
 - **空闲与续接。** Agent 空闲 10 分钟后会被停掉，下次请求时按原生会话 ID 续接。续接失败会明确报错，不会悄悄开一个新会话。
 - **两个宿主，一份状态。** Claude Code 和 Codex 共用同一份状态。要在另一个宿主里继续某个会话，需要显式 attach。
 
@@ -192,10 +194,10 @@ Agent 的模式超出你的授权时，任务先记为 `waiting_confirmation`（
 }
 ```
 
-- **`language`**：给人看的文字（对话框、命令行输出）用什么语言，`"zh"` 或 `"en"`。
-  - 没设置时，依次参考 `TURNWEFT_LANG`、`LC_ALL`、`LC_MESSAGES`、`LANG` 和 macOS 系统首选语言，都没有则用英文。
+- **`language`**：给人看的文字（对话框、命令行输出、确认内容）用什么语言，`"zh"` 或 `"en"`。
+  - 优先顺序：环境变量 `TURNWEFT_LANG`，然后是这个设置，再依次是 `LC_ALL`、`LC_MESSAGES`、`LANG` 和 macOS 系统首选语言，最后是英文。
   - 从程序坞启动的宿主读不到终端里的环境变量，要固定语言就用这个设置。
-  - 给模型看的文字始终是英文。
+  - 写给模型看的工具说明和流程提示始终是英文。
 - **`executables`**：指定各 Agent 命令行工具的路径。
   - 不指定时，先在 `PATH` 里找，再依次找 `~/.local/bin`、`/opt/homebrew/bin`、`/usr/local/bin`。
   - OpenCode 还会找 `~/.opencode/bin`，Dim 还会找 DimAgent.app 内置的 `dim`。
@@ -217,8 +219,8 @@ turnweft session close tws_…
 
 ## 常见问题
 
-- **某个 Agent 显示不可用**：运行 `turnweft doctor`，它会说明是哪个命令行工具找不到或没登录。工具装在不常见的位置时，在 `executables` 里写上路径。
-- **开着 bypass 却弹出了确认框**：有两种可能，一是这个对话是在安装或更新插件之前开的，二是助手改用了 `turnweft` 命令行，没用插件工具。新开一个对话即可。
+- **某个 Agent 显示不可用**：运行 `turnweft doctor`。它会检查各命令行工具是否装好并报告版本，但不检查你是否已登录；没登录的 Agent 会在第一次执行任务时报 `auth_required`。工具装在不常见的位置时，在 `executables` 里写上路径。
+- **开着 bypass 却弹出了确认框**：bypass 放行需要运行时 0.1.0-alpha.2 或更高版本（`npm install -g turnweft@latest`）。版本没问题的话，有两种可能：一是这个对话是在安装或更新插件之前开的，二是助手改用了 `turnweft` 命令行，没用插件工具。新开一个对话即可。
 - **助手说 Turnweft 没装**：插件没找到运行时。运行 `npm install -g turnweft`，然后新开一个对话。
 - **日志**在 `~/.turnweft/logs/` 下：
   - `mcp.log`：确认通道的记录；
@@ -236,6 +238,8 @@ turnweft session close tws_…
 
 ## 卸载
 
+先取消或关闭正在运行的会话（`turnweft session list`，再 `turnweft session close <id> --policy cancel_running`），卸载本身不会停止已经在跑的任务。
+
 ```bash
 claude plugin uninstall turnweft@turnweft
 codex plugin remove turnweft@turnweft
@@ -249,14 +253,14 @@ Turnweft 的会话、确认记录和日志保存在 `~/.turnweft`，删除这个
 ```bash
 git clone https://github.com/handong66/turnweft.git
 cd turnweft
-npm install         # 同时启用仓库自带的 git 钩子
+npm install         # 同时启用仓库自带的 git 钩子（已设置 core.hooksPath 时不覆盖；CI 中跳过）
 npm run build
 npm link            # turnweft 命令改为运行这份代码
 npm test            # 核心和宿主层测试，用模拟 Agent，不消耗模型额度
 node scripts/live-smoke.mjs droid --model <模型>   # 真实 Agent 端到端测试（消耗额度）
 ```
 
-每次影响用户的改动都要同步更新文档，并在 [CHANGELOG.md](CHANGELOG.md) 里写一条记录。提交前的 git 钩子会检查这一点；发布时，`CHANGELOG.md` 里必须有当前版本的一节。发布前运行 `node scripts/privacy-scan.mjs` 和 `node scripts/privacy-scan.mjs --pack`。改版本号只用 `npm version <版本>`，它会同步插件说明文件里的版本。
+每次影响用户的改动都要同步更新文档，并在 [CHANGELOG.md](CHANGELOG.md) 里写一条记录。每次提交和合并时，git 钩子都会检查这一点，并扫描要提交的内容里有没有隐私信息。发布时，`CHANGELOG.md` 里必须有当前版本的一节，最终的 npm 包也会自动扫描。改版本号只用 `npm version <版本>`，它会同步插件说明文件里的版本。
 
 ## 许可证
 

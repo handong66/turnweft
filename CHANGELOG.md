@@ -11,14 +11,17 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 ### Added
 - Conversations running in the host's bypass mode are no longer asked to confirm. This means Claude Code's `bypassPermissions` mode, reported by the plugin's new PreToolUse hook for each call, or Codex full access (`sandbox_mode: danger-full-access`). Claude Code's auto mode and every other mode still show the dialog. The approval covers one job, at the permissions it had when submitted, and is not remembered.
 - `turnweft send` on the command line shows the macOS confirmation dialog, like the plugins do. Before, it only printed the terminal command.
-- `CHANGELOG.md`, a pre-commit hook that requires a changelog entry for user-facing changes and runs the privacy scan, and a publish check for the version's changelog section.
+- `CHANGELOG.md`, and git hooks (pre-commit and pre-merge-commit) that require a new changelog entry for user-facing changes and scan the staged content for private data. `npm install` enables them unless you already set `core.hooksPath` (skipped in CI).
+- Publishing checks that the version has a changelog section and scans the final npm package for private data.
 
 ### Changed
 - The README is rewritten for people who don't know the project yet: what it is for, how a typical session goes, safety, configuration and troubleshooting. English and Chinese versions.
-- The plugin skills tell the assistant to use the Turnweft tools rather than the command line, which always asks for confirmation.
+- The plugin skills tell the assistant to use the Turnweft tools rather than the command line, which never takes the bypass shortcut.
+- The plugins now require runtime 0.1.0-alpha.2 or later, so bypass approval works after upgrading (`npm install -g turnweft@latest`).
+- The README states the limits plainly: changed files come from git snapshots, the assistant's verification is a skill instruction, `doctor` doesn't check sign-in, and Grok tasks need one confirmation even for analysis.
 
 ### Security
-- The bypass signal was reviewed over three rounds of cross-review. It can't be set by the model, by tool arguments or through the command line's environment. Each record is bound to one call (tool + task arguments), is valid for 15 seconds and is used once.
+- The bypass signal was reviewed over three rounds of cross-review. It can't be set through tool arguments or through the command line's environment, and the hook overwrites any planted record before each call. Each record is bound to one call (tool + task arguments), is valid for 15 seconds and is used once. A program that can write to `~/.turnweft` at the same moment as the call is outside this protection.
 
 ## [0.1.0-alpha.1] - 2026-10-05
 

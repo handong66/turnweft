@@ -7,7 +7,7 @@ description: Delegate a task to another coding agent (Dim, Droid, Grok, OpenCode
 
 Turnweft runs the other agent in the user's real project directory, in a persistent session you can continue. Tools: `turnweft_agents`, `turnweft_session`, `turnweft_ask` (analyze), `turnweft_delegate` (implement), `turnweft_job`, `turnweft_cancel`.
 
-Always use these tools. Do not shell out to the `turnweft` command line instead: it cannot see this conversation's permission mode, so it always asks the user to confirm, even in bypass mode. If the tools are missing (for example right after the plugin was reinstalled), tell the user to start a new conversation.
+Always use these tools. Do not shell out to the `turnweft` command line instead: it cannot see this conversation's permission mode, so it never takes the bypass shortcut and asks the user whenever a confirmation is required. If the tools are missing (for example right after the plugin was reinstalled), tell the user to start a new conversation.
 
 ## Start or continue a session
 - Pick the provider the user named. If unsure whether it is installed, call `turnweft_agents`.

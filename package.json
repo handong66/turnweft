@@ -39,7 +39,7 @@
     "prepare": "npm run build && node scripts/install-hooks.mjs",
     "sync-launcher": "node scripts/sync-launcher.mjs",
     "version": "node scripts/sync-version.mjs && node scripts/changelog.mjs --release && git add plugins/claude-code/.claude-plugin/plugin.json plugins/codex/.codex-plugin/plugin.json CHANGELOG.md",
-    "prepublishOnly": "node scripts/sync-version.mjs --check && node scripts/changelog.mjs --check"
+    "prepublishOnly": "node scripts/sync-version.mjs --check && node scripts/changelog.mjs --check && node scripts/privacy-scan.mjs --pack"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.7.0",

@@ -2,6 +2,7 @@
 // Release check: scan what would be published for secrets, personal data and local paths.
 //   node scripts/privacy-scan.mjs [dir]         the git-tracked files of a repository (default: cwd)
 //   node scripts/privacy-scan.mjs --pack [dir]  the files `npm pack` would publish (packed locally, never uploaded)
+//   node scripts/privacy-scan.mjs --index [dir] the staged (index) content that a commit would record (pre-commit)
 // Exits 1 when anything is found, including files it could not scan (binary or too large). Findings print the
 // rule and location only, never the matched text, so a real secret does not end up in a terminal or CI log.
 // Raw agent logs (m0/results/) must never be tracked: agents load local context (memories, skill lists,
@@ -13,6 +14,7 @@ import { join, relative } from "node:path";
 
 const args = process.argv.slice(2);
 const pack = args.includes("--pack");
+const index = args.includes("--index");
 const root = args.find((a) => !a.startsWith("--")) ?? process.cwd();
 const MAX_BYTES = 5_000_000;
 
@@ -48,7 +50,10 @@ let scanRoot = root, files, cleanup = () => {};
 if (pack) {
   const tmp = mkdtempSync(join(tmpdir(), "turnweft-pack-"));
   cleanup = () => rmSync(tmp, { recursive: true, force: true });
-  const out = execFileSync("npm", ["pack", "--json", "--pack-destination", tmp], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  // Always write a real tarball: inside `npm publish --dry-run` npm passes dry-run down to child npm commands. Scripts
+  // run (prepare builds dist/), because prepublishOnly runs before publish's own build and dist/ may be stale.
+  const env = { ...process.env, npm_config_dry_run: "false" };
+  const out = execFileSync("npm", ["pack", "--json", "--pack-destination", tmp], { cwd: root, env, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   const tarball = join(tmp, JSON.parse(out)[0].filename);
   execFileSync("tar", ["-xzf", tarball, "-C", tmp]);
   scanRoot = join(tmp, "package");
@@ -59,11 +64,25 @@ if (pack) {
 
 let found = 0;
 const report = (where, rule) => { console.log(`${where}: ${rule}`); found++; };
+
+/** File content as it will be committed (--index) or as it is on disk. Unreadable staged content fails closed. */
+function read(f) {
+  if (index) {
+    try { return execFileSync("git", ["show", `:${f}`], { cwd: root, maxBuffer: MAX_BYTES + 1 }); }
+    catch { report(f, "not scanned: staged content unreadable or too large"); return undefined; }
+  }
+  const p = join(scanRoot, f);
+  try {
+    if (statSync(p).size > MAX_BYTES) { report(f, `not scanned: larger than ${MAX_BYTES} bytes`); return undefined; }
+    return readFileSync(p);
+  } catch { return undefined; } // listed by git but deleted on disk
+}
+
 for (const f of files) {
   for (const [rule, test] of badNames) if (test(f)) report(f, rule);
-  const p = join(scanRoot, f);
-  let buf;
-  try { if (statSync(p).size > MAX_BYTES) { report(f, `not scanned: larger than ${MAX_BYTES} bytes`); continue; } buf = readFileSync(p); } catch { continue; }
+  const buf = read(f);
+  if (!buf) continue;
+  if (buf.length > MAX_BYTES) { report(f, `not scanned: larger than ${MAX_BYTES} bytes`); continue; }
   if (buf.subarray(0, 8000).includes(0)) { report(f, "not scanned: binary file"); continue; }
   const lock = f.endsWith("package-lock.json");
   buf.toString("utf8").split("\n").forEach((line, i) => {
@@ -72,6 +91,6 @@ for (const f of files) {
   });
 }
 cleanup();
-const what = pack ? "npm package" : relative(process.cwd(), root) || ".";
+const what = pack ? "npm package" : index ? "staged content" : relative(process.cwd(), root) || ".";
 console.log(found ? `\n${found} finding(s) in ${what}` : `clean: ${files.length} files checked in ${what}`);
 process.exit(found ? 1 : 0);

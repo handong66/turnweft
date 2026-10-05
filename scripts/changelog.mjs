@@ -20,7 +20,15 @@ export function release(text, v, date) {
   if (!/^## \[Unreleased\]/m.test(text)) throw new Error("CHANGELOG.md has no [Unreleased] section");
   const body = text.split(/^## \[Unreleased\][ \t]*$/m)[1].split(/^## \[/m)[0];
   if (!body.trim()) throw new Error("CHANGELOG.md [Unreleased] is empty: describe the changes before releasing");
-  return text.replace(/^## \[Unreleased\][ \t]*$/m, `## [Unreleased]\n\n## [${v}] - ${date}`);
+  let out = text.replace(/^## \[Unreleased\][ \t]*$/m, `## [Unreleased]\n\n## [${v}] - ${date}`);
+  // Keep the comparison links at the bottom in step: Unreleased compares from the new tag, and the new version
+  // compares from the previous one.
+  const link = out.match(/^\[Unreleased\]: (\S+)\/compare\/(\S+)\.\.\.HEAD$/m);
+  if (link) {
+    const [line, base, prev] = link;
+    out = out.replace(line, `[Unreleased]: ${base}/compare/v${v}...HEAD\n[${v}]: ${base}/compare/${prev}...v${v}`);
+  }
+  return out;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

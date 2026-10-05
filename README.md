@@ -27,6 +27,8 @@ Turnweft replaces that with one way of working. You stay in the assistant you al
 
 ## What it looks like
 
+These conversations are illustrative; real wording depends on the agents and models you use.
+
 ### A second opinion, without leaving your chat
 
 > **You** (in Claude Code): Ask Grok to review the login changes I just made. Don't change anything.
@@ -41,7 +43,7 @@ Grok read the real files in your project. Because you asked for a review, it cha
 >
 > **Claude**: Droid fixed both bugs. Changed in this turn: `src/math.js`. Your own uncommitted edit to `NOTES.md` was already there and was left alone. I ran the tests myself: 2 passed, 0 failed.
 
-The result separates the files the agent changed from changes you already had. Claude also runs the tests itself instead of taking the agent's word for it.
+Turnweft compares git snapshots taken before and after the turn, so it can list files that changed during the turn separately from changes you already had. It can't tell who made a change: if you edit the same folder while an agent works, your edits show up too. The plugin also tells Claude to run the tests itself rather than take the agent's word for it.
 
 ### Pick up where you left off
 
@@ -60,7 +62,7 @@ The first time an agent needs more than reading in a project, such as editing fi
 1. **Install once.** Run `npm install -g turnweft`, then add the plugin to Claude Code and/or Codex (see [Quick start](#quick-start)).
 2. **Ask in plain language.** For example: "Ask OpenCode how this module is structured" or "Have agy implement the CSV export". There are no new commands to learn.
 3. **Confirm once if asked.** A dialog may appear the first time an agent edits files in a project. It waits for you, and silence never counts as "no".
-4. **Get a verified result.** You see the agent's answer, the files it changed, and the permission mode it actually ran with. Claude or Codex checks the work before calling it done.
+4. **Check the result.** You see the agent's answer, the files that changed during the turn, and the permission mode it actually ran with. The plugin tells Claude or Codex to verify the work, for example by running the tests, before calling it done. An agent saying "done" is a claim, not proof.
 5. **Follow up anytime.** Ask the same agent again, minutes or days later, and it remembers the earlier work.
 6. **Stay in control.** You can cancel a running task, list or revoke past permissions, and see exactly what each agent was allowed to do.
 
@@ -116,11 +118,11 @@ You can name a model if you want one ("use Droid with glm-5.3-flash"). Otherwise
 
 ## Permissions and safety
 
-- **Read-only when you ask for analysis.** Reviews and questions run in each agent's read-only or ask-first mode wherever the agent has one. The exception is a Grok config that auto-approves everything: Grok then can't be held read-only, so Turnweft says so and asks you to confirm.
+- **Read-only when you ask for analysis.** Reviews and questions run in each agent's read-only or ask-first mode wherever the agent has one. Grok is the exception: Turnweft can't verify Grok's actual permission mode, so Grok tasks need one confirmation even for analysis. If your Grok config auto-approves everything, Grok can't be held read-only at all, and the confirmation says so.
 - **Broader modes are confirmed once.** Some agents can only edit in a mode that goes beyond what you granted. For example, the agent approves commands automatically, or it skips its own permission checks. Then a macOS dialog asks you once per agent × project × kind of task. If the agent's version changes, or the mode starts allowing more, you are asked again.
 - **Bypass conversations aren't asked.** In Claude Code, only `bypassPermissions` counts; auto mode and every other mode still show the dialog. In Codex, only full access (`danger-full-access`) counts. Turnweft learns the mode from Claude Code or Codex itself, never from what the model says. This kind of approval covers one task and is not remembered.
 - **Every result tells the truth about permissions.** It states the mode the agent actually ran with, what that mode allows beyond your grant, and what authorized it.
-- **Nothing runs twice by accident.** If the connection drops after a task was handed over, the task is marked `in_doubt` for you to check. It is never resent automatically.
+- **Nothing runs twice by accident.** If the connection to the agent drops after a task was handed over, the task is marked `in_doubt` for you to check. It is never resent automatically. Closing Claude Code or Codex doesn't stop a running task: it keeps going in the background, and you can check on it later.
 - **Local only.** Turnweft keeps its state in `~/.turnweft` and makes no network requests of its own. The agents themselves talk to their providers as usual.
 
 What Turnweft can't do:
@@ -155,7 +157,7 @@ Claude Code / Codex ──MCP──▶ turnweft mcp ──▶ shared state (~/.t
 
 - **One runtime, two thin plugins.** The npm package is the only runtime. Each plugin contains an MCP registration, a skill that teaches the assistant how to use Turnweft, and a small launcher. The Claude Code plugin also has a hook that reports the conversation's permission mode. If the runtime is missing, the plugin offers a single setup tool that explains how to install it.
 - **Sessions and jobs.** A session binds to one native agent session. Each request is a background job. The caller supplies a `requestId`, so a retry returns the original job. Jobs in a session run in order, and writes to the same project run one at a time, even across sessions.
-- **Native permissions, read back.** Whenever an agent session is opened or resumed, Turnweft sets the agent's own permission mode and reads it back. If the agent reports something else, the task doesn't run.
+- **Native permissions, read back where possible.** Whenever an agent session is opened or resumed, Turnweft sets the agent's own permission mode and, for agents that report it, reads it back. If the agent reports something else, the task doesn't run. Grok's mode comes from its config file and can't be read back; for OpenCode, only the mode is checked, not its full permission rules.
 - **Idle and resume.** Idle agents are stopped after 10 minutes. The next request resumes them through their native session ID. If resuming fails, you get an error instead of a silent fresh start.
 - **Two hosts, one store.** Claude Code and Codex share the same state. To continue a session from the other host, attach it explicitly.
 
@@ -192,10 +194,10 @@ Optional settings live in `~/.turnweft/config.json`:
 }
 ```
 
-- **`language`** picks the language of text shown to people, such as dialogs and CLI output: `"en"` or `"zh"`.
-  - Without it, Turnweft follows `TURNWEFT_LANG`, then `LC_ALL`, `LC_MESSAGES` and `LANG`, then the macOS primary language, and finally defaults to English.
+- **`language`** picks the language of text shown to people, such as dialogs, CLI output and confirmation messages: `"en"` or `"zh"`.
+  - Order of precedence: the `TURNWEFT_LANG` environment variable, then this setting, then `LC_ALL`, `LC_MESSAGES` and `LANG`, then the macOS primary language, and finally English.
   - Hosts started from the Dock don't see shell variables, so this setting is the reliable way to choose.
-  - Text written for the model is always in English.
+  - Tool descriptions and workflow hints written for the model are always in English.
 - **`executables`** gives explicit paths to agent CLIs. Without it, Turnweft looks on `PATH`, then in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. It also checks `~/.opencode/bin` for OpenCode and the copy of `dim` bundled in DimAgent.app.
 - **`idleReleaseMs`** is how long an idle agent is kept running before it is stopped. The default is 10 minutes.
 - **`inactivityTimeoutMs`** is how long a turn may go without any activity from the agent before it is cancelled. The default is 10 minutes.
@@ -215,8 +217,8 @@ turnweft session close tws_…
 
 ## Troubleshooting
 
-- **An agent shows as unavailable.** Run `turnweft doctor`. It says which CLI is missing or not signed in. If the CLI lives somewhere unusual, set its path under `executables`.
-- **A dialog appeared in a bypass conversation.** Either that conversation started before the plugin was installed or updated, or the assistant used the `turnweft` command line instead of the plugin tools. Start a new conversation.
+- **An agent shows as unavailable.** Run `turnweft doctor`. It checks that each CLI is installed and reports its version, but it doesn't check whether you are signed in. A signed-out agent fails on its first task with `auth_required`. If the CLI lives somewhere unusual, set its path under `executables`.
+- **A dialog appeared in a bypass conversation.** Bypass approval needs runtime 0.1.0-alpha.2 or later (`npm install -g turnweft@latest`). Otherwise, either that conversation started before the plugin was installed or updated, or the assistant used the `turnweft` command line instead of the plugin tools. Start a new conversation.
 - **The assistant says Turnweft isn't installed.** The plugin found no runtime. Run `npm install -g turnweft`, then start a new conversation.
 - **Logs** are in `~/.turnweft/logs/`:
   - `mcp.log`: confirmation channels
@@ -234,6 +236,8 @@ turnweft session close tws_…
 
 ## Uninstall
 
+Cancel or close any running sessions first (`turnweft session list`, then `turnweft session close <id> --policy cancel_running`); uninstalling doesn't stop tasks that are already running.
+
 ```bash
 claude plugin uninstall turnweft@turnweft
 codex plugin remove turnweft@turnweft
@@ -247,14 +251,14 @@ Turnweft's sessions, confirmations and logs stay in `~/.turnweft` until you dele
 ```bash
 git clone https://github.com/handong66/turnweft.git
 cd turnweft
-npm install         # also enables the repository's git hooks
+npm install         # also enables the repository's git hooks (unless core.hooksPath is already set; skipped in CI)
 npm run build
 npm link            # the turnweft command now runs this checkout
 npm test            # core and host-layer tests with simulated agents; no model quota used
 node scripts/live-smoke.mjs droid --model <model>   # real agent end to end (uses quota)
 ```
 
-Every change that affects users updates the docs and adds an entry to [CHANGELOG.md](CHANGELOG.md). A pre-commit hook checks this, and publishing requires a changelog section for the version being published. Before publishing, run `node scripts/privacy-scan.mjs` and `node scripts/privacy-scan.mjs --pack`. Change versions only with `npm version <v>`; it keeps the plugin manifests in sync.
+Every change that affects users updates the docs and adds an entry to [CHANGELOG.md](CHANGELOG.md). The git hooks check this on every commit and merge, and scan the staged content for private data. Publishing requires a changelog section for the version and scans the final package automatically. Change versions only with `npm version <v>`; it keeps the plugin manifests in sync.
 
 ## License
 
