@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Live end-to-end smoke through LocalService with REAL providers (consumes model quota).
-// Usage: node scripts/live-smoke.mjs <provider> [--model <id>]
+// Usage: node scripts/live-smoke.mjs <provider> [--model <id>] [--effort <level>]
 // The harness confirms the U11 proposal itself; that stands in for the human in a test, never in product code.
 import { mkdtempSync, cpSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,6 +13,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const provider = process.argv[2];
 const mi = process.argv.indexOf("--model");
 const model = mi > 0 ? process.argv[mi + 1] : undefined;
+const ei = process.argv.indexOf("--effort");
+const effort = ei > 0 ? process.argv[ei + 1] : undefined;
 process.env.TURNWEFT_HOME ??= mkdtempSync(join(tmpdir(), "tw-live-home-"));
 process.env.TURNWEFT_IDLE_RELEASE_MS ??= "8000";
 
@@ -27,7 +29,7 @@ execFileSync("git", ["add", "-A"], { cwd: proj });
 execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "fixture"], { cwd: proj });
 writeFileSync(join(proj, "NOTES.md"), "pre-existing uncommitted note\n");
 
-const out = { provider, model, proj, home: process.env.TURNWEFT_HOME, steps: {} };
+const out = { provider, model, effort, proj, home: process.env.TURNWEFT_HOME, steps: {} };
 const t0 = Date.now();
 const log = (k, v) => { out.steps[k] = v; console.error(`[${((Date.now() - t0) / 1000).toFixed(1)}s] ${k}: ${JSON.stringify(v).slice(0, 400)}`); };
 
@@ -49,12 +51,12 @@ async function turn(sessionId, intent, prompt) {
 }
 
 const token = "TW-" + randomBytes(3).toString("hex").toUpperCase();
-const s = await svc.createSession({ provider, cwd: proj, host, model });
+const s = await svc.createSession({ provider, cwd: proj, host, model, effort });
 log("session", { id: s.id, cliVersion: s.cliVersion });
 
 let v = await turn(s.id, "implement", `Remember this token: ${token}. Fix the bugs in src/math.js so that the tests in test/math.test.js pass (run them with: node --test test/math.test.js). Reply in two sentences.`);
 const tests = (() => { try { execFileSync("node", ["--test", "test/math.test.js"], { cwd: proj, stdio: "pipe" }); return "pass"; } catch { return "fail"; } })();
-log("implement", { state: v.job.state, err: v.job.errorCode, reason: v.job.failureReason, files: v.result?.files, tests, perm: v.result?.permission && { mode: v.result.permission.effectiveMode, answered: v.result.permission.answeredRequests.length }, model: v.result?.model, text: v.result?.finalText?.slice(-200) });
+log("implement", { state: v.job.state, err: v.job.errorCode, reason: v.job.failureReason, files: v.result?.files, tests, perm: v.result?.permission && { mode: v.result.permission.effectiveMode, answered: v.result.permission.answeredRequests.length }, model: v.result?.model, effort: v.result?.effort, text: v.result?.finalText?.slice(-200) });
 
 v = await turn(s.id, "analyze", "What token did I ask you to remember? Reply with the token only.");
 log("recall_L1", { state: v.job.state, text: v.result?.finalText?.trim().slice(-60), ok: v.result?.finalText?.includes(token) });

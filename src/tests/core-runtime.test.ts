@@ -906,3 +906,47 @@ test("round 11 findings 4+5: a bypass authorization survives a policy revocation
     assert.match(vc.job.failureReason ?? "", /bypass authorization/);
   } finally { delete process.env.TURNWEFT_FAKE_EXCESS; rmSync(join(HOME, "fake-tier.txt"), { force: true }); }
 });
+
+test("U23: a requested thinking level is applied, read back and reported; none requested keeps the provider default", async () => {
+  const s = await svc.createSession({ provider: "droid", cwd: repo(), host, effort: "high" });
+  assert.equal((await svc.getSession(s.id))!.requestedEffort, "high", "stored with the session");
+  const v = await waitDone((await submit(s.id, "SAY:ok", "analyze")).id);
+  assert.equal(v.job.state, "succeeded");
+  assert.deepEqual(v.result!.effort, { requested: "high", effective: "high" });
+  const readback = v.events.find((e) => e.type === "config.readback");
+  assert.deepEqual((readback!.payload as { effort?: unknown }).effort, { requested: "high", effective: "high" });
+
+  const plain = await svc.createSession({ provider: "droid", cwd: repo(), host });
+  const w = await waitDone((await submit(plain.id, "SAY:ok", "analyze")).id);
+  assert.deepEqual(w.result!.effort, { effective: "auto" }, "stored as JSON: no requested field");
+});
+
+test("U23: a level the provider does not offer fails the turn with invalid_effort and never runs it", async () => {
+  const s = await svc.createSession({ provider: "droid", cwd: repo(), host, effort: "bogus" });
+  const v = await waitDone((await submit(s.id, "WRITE:never.txt")).id);
+  assert.equal(v.job.state, "failed");
+  assert.equal(v.job.errorCode, "invalid_effort");
+  assert.match(v.job.failureReason ?? "", /low, medium, high/, "the offered values are listed");
+  assert.equal(v.job.deliveredAt, undefined, "the prompt was never delivered");
+  assert.equal(existsSync(join(s.cwd, "never.txt")), false);
+  assert.notEqual((await svc.getSession(s.id))!.state, "broken", "the session itself is not broken");
+});
+
+test("U23: upgrading adds requested_effort to an existing sessions table", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tw-db-"));
+  const path = join(dir, "state.db");
+  const { DatabaseSync } = await import("node:sqlite");
+  const old = new DatabaseSync(path);
+  old.exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, provider TEXT NOT NULL, name TEXT, canonical_root TEXT NOT NULL, cwd TEXT,
+    native_session_id TEXT, state TEXT NOT NULL, broken_reason TEXT, host_bindings TEXT NOT NULL, capabilities TEXT, cli_version TEXT,
+    requested_model TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+  old.prepare("INSERT INTO sessions (id, provider, canonical_root, state, host_bindings, created_at, updated_at) VALUES (?,?,?,?,?,?,?)")
+    .run("tws_old", "dim", "/p", "ready", "[]", "t", "t");
+  old.close();
+  const st = new Store(path);
+  assert.equal(st.getSession("tws_old")!.requestedEffort, undefined, "old rows read without a level");
+  st.insertSession({ id: "tws_new", provider: "dim", cwd: "/p", canonicalRoot: "/p", state: "ready", hostBindings: [], requestedEffort: "max", createdAt: "t", updatedAt: "t" });
+  assert.equal(st.getSession("tws_new")!.requestedEffort, "max");
+  st.close();
+  rmSync(dir, { recursive: true, force: true });
+});

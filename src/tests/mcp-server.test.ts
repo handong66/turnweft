@@ -59,6 +59,7 @@ test("strict per-action session schemas reject missing parameters and model appr
     ...["get", "attach", "close"].map(action => ({ action })),
     { action: "list", sessionId: "not-allowed" }, { action: "create", provider: "unknown", cwd: "/project" },
     { action: "close", sessionId: "id", policy: "unsafe" }, { action: "get", sessionId: "" },
+    { action: "create", provider: "droid", cwd: "/project", effort: "" }, { action: "create", provider: "droid", cwd: "/project", effort: 3 },
   ]) assert.equal((await call(client, "turnweft_session", args)).error?.code, "invalid_arguments");
   for (const args of [{ ...turn, requestId: undefined }, { ...turn, approved: true }, { ...turn, confirmed: true }, { ...turn, host: { hostKind: "cli" } }]) {
     assert.equal((await call(client, "turnweft_delegate", args)).ok, false);
@@ -68,10 +69,11 @@ test("strict per-action session schemas reject missing parameters and model appr
 
 test("session actions route to the service and do not invent missing sessions", async t => {
   const { client, service } = await setup(t);
-  for (const args of [{ action: "create", provider: "droid", cwd: "/project", model: "explicit" }, { action: "list" }, ...["get", "attach", "close"].map(action => ({ action, sessionId: "tws_session" }))]) {
+  for (const args of [{ action: "create", provider: "droid", cwd: "/project", model: "explicit", effort: "xhigh" }, { action: "list" }, ...["get", "attach", "close"].map(action => ({ action, sessionId: "tws_session" }))]) {
     assert.equal((await call(client, "turnweft_session", args)).ok, true);
   }
   assert.deepEqual(service.calls.map(call => call.method), ["createSession", "listSessions", "getSession", "attachSession", "closeSession"]);
+  assert.equal((service.calls[0]!.input as { effort?: string }).effort, "xhigh", "effort reaches the service unchanged");
   service.foundSession = undefined;
   assert.equal((await call(client, "turnweft_session", { action: "get", sessionId: "missing" })).error?.code, "session_not_found");
 });

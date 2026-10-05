@@ -24,6 +24,22 @@ function configMap(options: unknown): Record<string, string> {
   return out;
 }
 
+/** Category and offered values of each select option; values depend on the current model (live probe, U23). */
+type OptionMeta = { category?: string; values: string[] };
+function optionMeta(options: unknown): Record<string, OptionMeta> {
+  const out: Record<string, OptionMeta> = {};
+  const values = (xs: unknown): string[] => Array.isArray(xs)
+    ? (xs as Json[]).flatMap((x) => (Array.isArray(x?.options) ? values(x.options) : x?.value != null ? [String(x.value)] : []))
+    : [];
+  if (Array.isArray(options)) for (const o of options as Json[]) {
+    if (o?.id != null) out[String(o.id)] = { category: o.category == null ? undefined : String(o.category), values: values(o.options) };
+  }
+  return out;
+}
+
+/** Ids used for the thinking level before ACP had a category for it (Dim, Droid/Grok, OpenCode; M0 §2). */
+const THOUGHT_LEVEL_IDS = ["thought_level", "reasoning_effort", "effort"];
+
 export const errText = (e: unknown) => {
   const x = e as Json;
   return [x?.message, x?.data?.detail, x?.data && JSON.stringify(x.data)].filter(Boolean).join(" | ") || String(e);
@@ -35,6 +51,7 @@ export class AcpConnection implements Connection {
   private sessionId?: string;
   private tier?: TierSpec;
   private effective: Record<string, string> = {};
+  private meta: Record<string, OptionMeta> = {};
   private onEvent: ((e: AdapterEvent) => void) | undefined;
   private initialized?: Promise<unknown>;
   readonly exited: Promise<{ code: number | null; signal: string | null }>;
@@ -84,7 +101,7 @@ export class AcpConnection implements Connection {
         this.onEvent?.({ type: "tool", id: u.toolCallId, kind: u.kind, title: u.title, status: u.status });
         break;
       case "config_option_update":
-        Object.assign(this.effective, configMap(u.configOptions));
+        this.absorb(u.configOptions);
         this.onEvent?.({ type: "config", effective: { ...this.effective } });
         break;
       case "current_mode_update":
@@ -126,25 +143,55 @@ export class AcpConnection implements Connection {
       res = await this.conn.newSession({ cwd: input.cwd, mcpServers: [] } as any) as Json;
       this.sessionId = String(res.sessionId);
     }
-    Object.assign(this.effective, configMap(res?.configOptions));
+    this.absorb(res?.configOptions);
     if (res?.modes?.currentModeId) this.effective["mode"] = String(res.modes.currentModeId);
 
     // §7.4: re-apply on every open/load; a new process never inherits permission state.
     const sets = this.profile.settingsFor(input.tier);
     if (input.model) sets.push(["model", input.model]);
-    for (const [configId, value] of sets) {
-      if (this.effective[configId] === value) continue;
-      const r = await this.conn.setSessionConfigOption({ sessionId: this.sessionId, configId, value } as any) as Json;
-      Object.assign(this.effective, configMap(r?.configOptions));
-      if (this.effective[configId] !== value) await this.waitForConfig(configId, value, 3000);
-    }
+    for (const [configId, value] of sets) await this.apply(configId, value);
+    // U23: the thinking level goes last. Its values depend on the model, and a model switch can reset it
+    // (live: OpenCode falls back to low), so it is checked against what the current model offers.
+    const effortId = this.thoughtLevelId();
+    if (input.effort) await this.applyEffort(effortId, input.effort);
     const effective = { ...this.effective, ...(this.profile.staticEffective?.() ?? {}) };
     return {
       nativeSessionId: this.sessionId,
       loaded,
       effective,
       model: { requested: input.model, effective: effective["model"] },
+      effort: { requested: input.effort, effective: effortId ? effective[effortId] : undefined },
     };
+  }
+
+  private absorb(options: unknown) {
+    Object.assign(this.effective, configMap(options));
+    Object.assign(this.meta, optionMeta(options));
+  }
+
+  private async apply(configId: string, value: string) {
+    if (this.effective[configId] === value) return;
+    const r = await this.conn.setSessionConfigOption({ sessionId: this.sessionId, configId, value } as any) as Json;
+    this.absorb(r?.configOptions);
+    if (this.effective[configId] !== value) await this.waitForConfig(configId, value, 3000);
+  }
+
+  private thoughtLevelId(): string | undefined {
+    return Object.keys(this.meta).find((id) => this.meta[id]?.category === "thought_level")
+      ?? THOUGHT_LEVEL_IDS.find((id) => id in this.meta);
+  }
+
+  /** Never run at a level other than the one requested: reject before setting, and verify the read-back. */
+  private async applyEffort(id: string | undefined, value: string) {
+    if (!id) throw new AdapterError("invalid_effort", "this agent exposes no thinking-level option");
+    const model = this.effective["model"] ? ` with model ${this.effective["model"]}` : "";
+    const offered = this.meta[id]?.values ?? [];
+    const reject = (why: string) => new AdapterError("invalid_effort",
+      `${why}; ${id} offers ${offered.length ? offered.join(", ") : "no listed values"}${model}. Create a new session with one of these values, or without effort.`);
+    if (offered.length && !offered.includes(value)) throw reject(`effort "${value}" is not offered`);
+    try { await this.apply(id, value); } catch (e) { throw reject(`setting ${id} to "${value}" failed: ${errText(e)}`); }
+    // Droid answers an unknown value with {} and keeps another level (live run), so only the read-back counts.
+    if (this.effective[id] !== value) throw reject(`requested effort "${value}" but the agent reports "${this.effective[id] ?? "nothing"}"`);
   }
 
   private lastUpdateAt = 0;

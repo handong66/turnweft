@@ -63,7 +63,7 @@ export async function runWorker(sessionId: string, store = new Store()): Promise
   let conn: Connection | undefined;
   let connTier: string | undefined;
   let connVersion: string | undefined;
-  let lastOpen: { effective: Record<string, string>; model: JobResult["model"] } = { effective: {}, model: undefined };
+  let lastOpen: { effective: Record<string, string>; model: JobResult["model"]; effort: JobResult["effort"] } = { effective: {}, model: undefined, effort: undefined };
   let idleSince = Date.now();
   let nativeUnconfirmed = false;
   let frozen: string | undefined;
@@ -171,8 +171,8 @@ interface JobCtx {
   getConn(): Connection | undefined; getTier(): string | undefined; getVersion(): string | undefined;
   setConn(c: Connection | undefined, tier?: string, version?: string): void; closeConn(): Promise<boolean>;
   onSpawn(pid: number): void;
-  getLastOpen(): { effective: Record<string, string>; model: JobResult["model"] };
-  setLastOpen(v: { effective: Record<string, string>; model: JobResult["model"] }): void;
+  getLastOpen(): { effective: Record<string, string>; model: JobResult["model"]; effort: JobResult["effort"] };
+  setLastOpen(v: { effective: Record<string, string>; model: JobResult["model"]; effort: JobResult["effort"] }): void;
 }
 
 async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen"> {
@@ -208,6 +208,7 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
   // Open or re-open: the tier is re-applied on every open/load (§7.4); a tier change means reopen.
   let effective: Record<string, string>;
   let model: JobResult["model"];
+  let effort: JobResult["effort"];
   try {
     // Reopen when the tier changed or the installed CLI no longer matches the running process (round 2, 7).
     if (x.getConn() && (x.getTier() !== tier.tier || x.getVersion() !== probe.cliVersion)) {
@@ -220,15 +221,16 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
     if (!x.getConn()) {
       const c = adapter.connect(session.cwd, { onSpawn: x.onSpawn }); // identity recorded at spawn (round 3, finding 4)
       x.setConn(c, tier.tier, probe.cliVersion); // own it immediately so a failed open still gets closed (finding 11)
-      const opened = await withTimeout(c.open({ cwd: session.cwd, nativeSessionId: session.nativeSessionId, tier, model: session.requestedModel }), cfg.openTimeoutMs, "provider open");
+      const opened = await withTimeout(c.open({ cwd: session.cwd, nativeSessionId: session.nativeSessionId, tier, model: session.requestedModel, effort: session.requestedEffort }), cfg.openTimeoutMs, "provider open");
       if (session.nativeSessionId && opened.nativeSessionId !== session.nativeSessionId) {
         throw new AdapterError("session_not_found", `provider returned ${opened.nativeSessionId} instead of ${session.nativeSessionId}`);
       }
       store.updateSession(session.id, { nativeSessionId: opened.nativeSessionId, cliVersion: probe.cliVersion, capabilities: adapter.capabilities });
-      x.setLastOpen({ effective: opened.effective, model: opened.model });
+      x.setLastOpen({ effective: opened.effective, model: opened.model, effort: opened.effort });
     }
     // Read the connection's live snapshot, not a cached one: config can change between turns (round 3, finding 6).
     model = x.getLastOpen().model;
+    effort = x.getLastOpen().effort;
     effective = { ...x.getLastOpen().effective, ...x.getConn()!.currentEffective() };
   } catch (e) {
     if (!(await x.closeConn())) {
@@ -247,7 +249,7 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
     return "done";
   }
 
-  ev("config.readback", session.provider, { tier: tier.tier, effective, model });
+  ev("config.readback", session.provider, { tier: tier.tier, effective, model, effort });
   if (!tier.satisfiedBy(effective)) {
     finish("failed", { errorCode: "capability_mismatch", failureReason: `read-back ${JSON.stringify(effective)} does not satisfy tier ${tier.tier}; not running in a different mode` });
     return "done";
@@ -372,7 +374,7 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
     adapterVersion: adapter.adapterVersion, cwd: session.cwd, nativeSessionId: sessionNow.nativeSessionId,
     state, stopReason: outcome?.stopReason, finalText: text, resultComplete: !error || state === "cancelled", truncated,
     permission: { effectiveMode: JSON.stringify(effective), policyId: matchedPolicyId ?? (authorizedBy ? undefined : job.policyId), ...(authorizedBy ? { authorizedBy } : {}), excessOverGrant: tier.excess.map(message => renderMessage(message)), answeredRequests: answered },
-    model, files, toolCalls: toolCalls.slice(-200),
+    model, effort, files, toolCalls: toolCalls.slice(-200),
   };
   finish(state, { errorCode, failureReason, policyId: matchedPolicyId ?? (authorizedBy ? undefined : job.policyId) }, result, { stopReason: outcome?.stopReason });
   store.setSessionStateUnlessClosed(session.id, lost && !sessionNow.nativeSessionId ? "broken" : "ready");

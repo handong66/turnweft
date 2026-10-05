@@ -12,6 +12,7 @@ Always use these tools. Do not shell out to the `turnweft` command line instead:
 ## Start or continue a session
 - Pick the provider the user named. If unsure whether it is installed, call `turnweft_agents`.
 - New work: `turnweft_session` with `action: "create"`, `provider`, `cwd` (the project directory). Keep the returned `sessionId` and use it for every follow-up with that agent in this conversation.
+- Set `model` or `effort` on create only when the user asks for one. `effort` is the agent's thinking level in that agent's own values, passed through unchanged: Dim `auto`/`none`/`high`/`max`, Droid `none`…`max`, Grok `low`…`xhigh`, OpenCode `low`/`high`/`max`/`default`, agy `low`…`max`. The exact set depends on the model. Both stay fixed for the session's life; a different level needs a new session.
 - Continue with the exact `sessionId` you saved. Never guess "the latest session". If you lost it, `turnweft_session` `list` for this project and ask the user which one if more than one fits.
 - A session created from another host (Codex) must be attached explicitly (`action: "attach"`) and only when the user asks to continue it here.
 
@@ -38,3 +39,4 @@ Some agents can only work in a tier that is broader than the current grant (for 
 - The agent saying "tests pass" is a claim. Run the tests yourself before telling the user the work is done.
 - `in_doubt` means the turn may have run but Turnweft could not confirm it finished; inspect the files before deciding whether to retry. Never resend automatically.
 - `failed` with `permission_blocked`, `capability_mismatch`, `auth_required` or `session_not_found`: report the reason to the user; do not switch to another agent or start a new session silently.
+- `failed` with `invalid_effort`: the agent does not offer that thinking level with this model; nothing was sent. The reason lists the values it offers. Ask the user which one to use, then create a new session with it.

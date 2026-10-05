@@ -52,7 +52,7 @@ export class LocalService implements TurnweftService {
     const s: Session = {
       id: newSessionId(), provider: input.provider, name: input.name, cwd, canonicalRoot: root, state: "ready",
       hostBindings: [input.host], capabilities: probe.capabilities, cliVersion: probe.cliVersion,
-      requestedModel: input.model, createdAt: t, updatedAt: t,
+      requestedModel: input.model, requestedEffort: input.effort, createdAt: t, updatedAt: t,
     };
     this.store.insertSession(s);
     return s;

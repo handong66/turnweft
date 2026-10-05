@@ -7,6 +7,7 @@
 //   $TURNWEFT_HOME/fake-tier.txt     suffix appended to the implement tier name (tier change between submit and run)
 //   TURNWEFT_FAKE_REAL_PROC=1        spawn a real process group (sh leader + background child) as the "provider"
 // Extra directive: STOP:<reason> returns that stopReason.
+// Thinking level (U23): offers low / medium / high (default "auto"); any other requested value fails open() with invalid_effort.
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -15,6 +16,7 @@ import type { Intent, ProbeResult, ProviderId } from "../core/types.js";
 import { stateDir } from "../runtime/paths.js";
 import { AdapterError, type Adapter, type AdapterEvent, type ConnectHooks, type Connection, type OpenInput, type OpenResult, type PromptOutcome, type TierSpec } from "./types.js";
 
+const FAKE_EFFORTS = ["low", "medium", "high"];
 const histDir = () => { const d = join(stateDir(), "fake-native"); mkdirSync(d, { recursive: true }); return d; };
 
 class FakeConnection implements Connection {
@@ -48,6 +50,7 @@ class FakeConnection implements Connection {
     const delay = Number(process.env.TURNWEFT_FAKE_OPEN_DELAY_MS ?? 0);
     if (delay) await new Promise((r) => setTimeout(r, delay));
     this.tier = input.tier;
+    if (input.effort && !FAKE_EFFORTS.includes(input.effort)) throw new AdapterError("invalid_effort", `effort "${input.effort}" is not offered; fake offers ${FAKE_EFFORTS.join(", ")}`);
     if (input.nativeSessionId) {
       if (!existsSync(join(histDir(), `${input.nativeSessionId}.json`))) throw new AdapterError("session_not_found", `fake session ${input.nativeSessionId} not found`);
       this.id = input.nativeSessionId;
@@ -55,8 +58,12 @@ class FakeConnection implements Connection {
       this.id = `fake-${randomUUID()}`;
       writeFileSync(join(histDir(), `${this.id}.json`), JSON.stringify({ memory: {} }));
     }
-    this.snapshot = { mode: input.tier.tier };
-    return { nativeSessionId: this.id, loaded: Boolean(input.nativeSessionId), effective: { ...this.snapshot }, model: { requested: input.model, effective: input.model ?? "fake-default" } };
+    this.snapshot = { mode: input.tier.tier, effort: input.effort ?? "auto" };
+    return {
+      nativeSessionId: this.id, loaded: Boolean(input.nativeSessionId), effective: { ...this.snapshot },
+      model: { requested: input.model, effective: input.model ?? "fake-default" },
+      effort: { requested: input.effort, effective: this.snapshot.effort },
+    };
   }
 
   async prompt(text: string, onEvent: (e: AdapterEvent) => void): Promise<PromptOutcome> {
@@ -124,7 +131,7 @@ export function fakeAdapter(provider: ProviderId): Adapter {
   return {
     provider,
     adapterVersion: "fake-0",
-    capabilities: { transport: "acp", multiTurn: true, resumeAfterRestart: "supported", cancelTurn: "protocol", permissions: "callback", structuredEvents: "exact", modelConfig: "session" },
+    capabilities: { transport: "acp", multiTurn: true, resumeAfterRestart: "supported", cancelTurn: "protocol", permissions: "callback", structuredEvents: "exact", modelConfig: "session", effortConfig: "session" },
     async probe(): Promise<ProbeResult> {
       return { provider, available: true, executable: "fake", cliVersion: "0.0.0-fake", adapterVersion: "fake-0", capabilities: this.capabilities, problems: [], probedAt: new Date().toISOString() };
     },

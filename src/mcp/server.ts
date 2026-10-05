@@ -49,7 +49,7 @@ const object = (properties: Record<string, JsonSchemaType>, required: string[] =
 const sessionSchema: Tool["inputSchema"] = {
   type: "object",
   oneOf: [
-    object({ action: { const: "create" }, provider, cwd: string, name: string, model: string }, ["action", "provider", "cwd"]),
+    object({ action: { const: "create" }, provider, cwd: string, name: string, model: string, effort: string }, ["action", "provider", "cwd"]),
     {
       ...object({ action: { const: "list" }, scope: { enum: ["this_host", "project"] }, canonicalRoot: string, provider, includeClosed: boolean }, ["action"]),
       allOf: [{ if: { properties: { scope: { const: "project" } }, required: ["scope"] }, then: { required: ["canonicalRoot"] } }],
@@ -61,7 +61,7 @@ const sessionSchema: Tool["inputSchema"] = {
 const turnSchema = object({ sessionId: string, prompt: string, requestId: string }, ["sessionId", "prompt", "requestId"]);
 const tools: Tool[] = [
   { name: "turnweft_agents", description: "List targets, versions, capabilities and problems; does not submit a model task.", inputSchema: object({ refresh: boolean }), annotations: { readOnlyHint: true } },
-  { name: "turnweft_session", description: "Create/list/get/attach/close an exact session. Names are labels, not resume handles. List scope defaults to this_host; project requires canonicalRoot and finds sessions across hosts before explicit attach.", inputSchema: sessionSchema },
+  { name: "turnweft_session", description: "Create/list/get/attach/close an exact session. Names are labels, not resume handles. model and effort (thinking level, in the agent's own values) are set only when the user asks; an unsupported effort fails the first turn and lists the values offered. List scope defaults to this_host; project requires canonicalRoot and finds sessions across hosts before explicit attach.", inputSchema: sessionSchema },
   { name: "turnweft_ask", description: "Submit analyze intent in the background. Generate and save requestId before calling; reuse it for retries. If the result is awaiting_confirmation, keep calling turnweft_job in the same turn until the job starts (up to ~10 minutes); never resubmit.", inputSchema: turnSchema },
   { name: "turnweft_delegate", description: "Submit implement intent in the background, with human U11 confirmation when required. Save requestId before calling. If the result is awaiting_confirmation, a Turnweft dialog is waiting for the user: keep calling turnweft_job (waitMs 25000, afterSeq = previous nextSeq) in the same turn until the job leaves waiting_confirmation (up to ~10 minutes); never resubmit.", inputSchema: turnSchema },
   { name: "turnweft_job", description: "Read job state, events and paged results. Defaults to immediate return; waits are bounded. ok describes the query, not job success.", inputSchema: object({ jobId: string, afterSeq: integer, waitMs: integer, includeResult: boolean, resultOffset: integer, resultLimit: { type: "integer", minimum: 1 } }, ["jobId"]), annotations: { readOnlyHint: true } },

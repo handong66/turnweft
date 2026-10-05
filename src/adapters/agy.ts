@@ -32,6 +32,7 @@ export class AgyConnection implements Connection {
     const args = ["--input-format", "stream-json", "--output-format", "stream-json", "--add-dir", input.cwd];
     if (skip) args.push("--dangerously-skip-permissions", "--mode", "accept-edits");
     if (input.model) args.push("--model", input.model);
+    if (input.effort) args.push("--effort", input.effort); // U23: launch flag; agy rejects unknown values at startup
     if (input.nativeSessionId) args.push("--conversation", input.nativeSessionId);
     args.push("-p=");
     this.proc = spawn(this.exe, args, { cwd: input.cwd, stdio: ["pipe", "pipe", "pipe"], detached: true, env: providerEnv(this.exe) });
@@ -46,7 +47,10 @@ export class AgyConnection implements Connection {
     await Promise.race([
       new Promise<void>((r) => { this.initWaiter = r; }),
       new Promise<void>((r) => setTimeout(r, 20000)),
-      this.exited.then(() => { throw new AdapterError("provider_error", `agy exited during startup: ${this.stderrTail.slice(-300)}`); }),
+      this.exited.then(() => {
+        const tail = this.stderrTail.slice(-300);
+        throw new AdapterError(/invalid --effort/i.test(tail) ? "invalid_effort" : "provider_error", `agy exited during startup: ${tail}`);
+      }),
     ]);
     permissionMode = this.initPermissionMode ?? permissionMode;
     if (input.nativeSessionId && this.conversationId && this.conversationId !== input.nativeSessionId) {
@@ -63,6 +67,8 @@ export class AgyConnection implements Connection {
       // "request-review" otherwise. --mode is not echoed, so it is recorded only as a launch flag.
       effective: (this.effectiveSnapshot = { permission_mode: permissionMode, launch_flags: mode ?? "none" }),
       model: { requested: input.model, effective: input.model },
+      // agy's init event does not echo the level: effective is the launch flag, not a read-back.
+      effort: { requested: input.effort, effective: input.effort },
     };
   }
 

@@ -80,7 +80,7 @@ function tier(t: string, excess: Message[], decide: TierSpec["decide"], satisfie
 
 const acpCaps = (permissions: AgentCapabilities["permissions"], resume: AgentCapabilities["resumeAfterRestart"]): AgentCapabilities => ({
   transport: "acp", multiTurn: true, resumeAfterRestart: resume, cancelTurn: "protocol",
-  permissions, structuredEvents: "exact", modelConfig: "session",
+  permissions, structuredEvents: "exact", modelConfig: "session", effortConfig: "session",
 });
 
 function grokPermissionMode(): string {
@@ -192,7 +192,7 @@ const DEFS: ProfileDef[] = [
     provider: "agy",
     capabilities: {
       transport: "native-stream", multiTurn: true, resumeAfterRestart: "supported", cancelTurn: "process",
-      permissions: "native-policy", structuredEvents: "inferred", modelConfig: "launch",
+      permissions: "native-policy", structuredEvents: "inferred", modelConfig: "launch", effortConfig: "launch",
     },
     // Live run: with accept-edits alone, the first command without an allow rule ends the turn before any edit
     // (permission_blocked). The implement tier therefore skips agy's prompts; U11 confirms it once and every

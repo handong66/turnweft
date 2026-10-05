@@ -114,7 +114,17 @@ codex plugin add turnweft@turnweft
 - “接着用同一个 Dim 会话：你为什么选了那个库？”
 - “取消 Droid 的任务。”
 
-想指定模型也可以，比如“让 Droid 用 glm-5.3-flash”。不指定时，各 Agent 用自己的默认模型。
+想指定模型也可以，比如“让 Droid 用 glm-5.3-flash”；思考强度也能指定，比如“让 Dim 用 max 思考强度”。不指定时，各 Agent 用自己的默认设置。思考强度用各 Agent 自己的取值，具体有哪些取决于模型：
+
+| Agent | 思考强度 | 设置方式 |
+| --- | --- | --- |
+| Dim | `auto`、`none`、`high`、`max` | ACP 配置项 `thought_level` |
+| Droid | `none`、`low`、`medium`、`high`、`xhigh`、`max` | ACP 配置项 `reasoning_effort` |
+| Grok | `low`、`medium`、`high`、`xhigh` | ACP 配置项 `reasoning_effort` |
+| OpenCode | `low`、`high`、`max`、`default`（部分模型有 `medium`） | ACP 配置项 `effort` |
+| agy | `low`、`medium`、`high`、`xhigh`、`max` | 启动参数 `--effort` |
+
+模型和思考强度在创建会话时确定，每次恢复会话都会重新设置。Agent 在该模型下不提供这个强度时，第一个任务会以 `invalid_effort` 失败，此时什么都还没发出，错误信息里列出它实际提供的取值。结果里同时写明请求的强度和 Agent 读回的强度。
 
 ## 权限与安全
 
@@ -234,6 +244,7 @@ turnweft session close tws_…
 - Grok 的实际权限模式无法读回，只能按 `~/.grok/config.toml` 判断；OpenCode 实际生效的权限规则也无法读回。结果里会写明这一点。
 - OpenCode 的 ACP 不回传 provider 错误（例如额度用尽），Turnweft 只能靠无活动超时发现。
 - 显式指定 Dim 的模型会永久改变该工作区的默认模型，结果里会说明。
+- 已有会话不能改思考强度，需要新建会话。agy 不回报思考强度，结果里显示的是启动时传入的值。
 - Claude Code 和 Codex 是宿主，不是委派对象：Turnweft 不会把工作交给它们。
 
 ## 卸载
@@ -257,7 +268,7 @@ npm install         # 同时启用仓库自带的 git 钩子（已设置 core.ho
 npm run build
 npm link            # turnweft 命令改为运行这份代码
 npm test            # 核心和宿主层测试，用模拟 Agent，不消耗模型额度
-node scripts/live-smoke.mjs droid --model <模型>   # 真实 Agent 端到端测试（消耗额度）
+node scripts/live-smoke.mjs droid --model <模型> [--effort <强度>]   # 真实 Agent 端到端测试（消耗额度）
 ```
 
 每次影响用户的改动都要同步更新文档，并在 [CHANGELOG.md](CHANGELOG.md) 里写一条记录。每次提交和合并时，git 钩子都会检查这一点，并扫描要提交的内容里有没有隐私信息。发布时，`CHANGELOG.md` 里必须有当前版本的一节，最终的 npm 包也会自动扫描。改版本号只用 `npm version <版本>`，它会同步插件说明文件里的版本。

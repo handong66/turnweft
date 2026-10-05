@@ -165,6 +165,13 @@ test("session, cancellation and policy commands use only service methods", async
   }
 });
 
+test("U23: session create passes --model and --effort through unchanged", async () => {
+  const h = harness(); const service = new FakeService();
+  assert.equal(await runCli(["session", "create", "--agent", "dim", "--cwd", "/project", "--model", "m", "--effort", "max", "--json"], service, h.io), 0);
+  const input = service.calls[0]!.input as { model?: string; effort?: string };
+  assert.equal(input.model, "m"); assert.equal(input.effort, "max");
+});
+
 test("separate CLI create, attach and send calls use the same CLI host identity", async () => {
   const service = new FakeService();
   await runCli(["session", "create", "--agent", "droid", "--cwd", "/project", "--json"], service, harness().io);

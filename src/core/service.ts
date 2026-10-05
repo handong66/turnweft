@@ -12,6 +12,11 @@ export interface CreateSessionInput {
   name?: string;
   /** Explicit model request. Omit to use the provider's own configuration (product default). */
   model?: string;
+  /**
+   * U23: explicit thinking level, in the provider's own values (e.g. Dim high, Droid xhigh). Omit to keep the
+   * provider's default. Applied after the model on every open; a value the provider rejects fails the turn.
+   */
+  effort?: string;
   host: HostBinding;
 }
 

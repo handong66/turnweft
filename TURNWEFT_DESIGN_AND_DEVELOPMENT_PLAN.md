@@ -75,6 +75,7 @@ AgentBridge 已有多个同领域项目；AgentRelay / `agent-relay` 也已有�
 | U20 | **开源发布**：MIT 许可证；公开仓库和 npm 包都叫 `turnweft`；README 以英文为主，另附中文版（README.zh-CN.md）；同时发布到 npm。私人仓库保留为完整开发记录，公开仓库只放一个干净的初始提交，不含 `m0/results/` 原始协议日志（其中录到了本机的 Agent 记忆、skill 列表和本机路径）。创建公开仓库、改名私人仓库和 npm 发布在准备好产物并经用户确认后执行；npm 登录由用户本人完成。（2026-10-04） | §15 M4 |
 | U21 | **宿主处于 bypass 模式时，由该模式授权，不再确认**：从开了 bypass 的宿主对话提交的任务直接放行，不生成提案、不弹窗；只对这一个任务有效，不保存为长期确认，同一项目在非 bypass 对话中照常确认。只认宿主为**这一次调用**给出的信号：Claude Code 由插件自带的 PreToolUse 钩子在每次 `turnweft_ask` / `turnweft_delegate` 调用前取得 Claude Code 交给它的当前 `permission_mode`，按会话 ID 和本次调用的摘要（工具名 + 全部任务参数：Turnweft 会话、任务内容、requestId）记下；钩子写入前先删除旧记录。运行时只认 15 秒内、全部对得上的记录，读后即删，参数无效的调用也会消耗记录。这依赖钩子正常运行：钩子没运行时没有新记录，就照常弹窗；只有 `bypassPermissions` 算数，`auto` 等其他模式照常弹窗。Codex 读本次调用附带的 `x-codex-turn-metadata.sandbox_mode`，只有 `danger-full-access`（完全访问）算数。命令行 `turnweft send` 永远不自动放行（它的环境变量谁都能改），需要确认时弹出 macOS 对话框。bypass 授权与长期确认相互独立：撤销确认不影响已放行的任务；授权绑定提交时的权限指纹，排队期间档位或版本变化则要求重新授权。读不到或不确定时按非 bypass 处理。结果写明实际档位和 `authorizedBy`。第 11 轮评审后改为钩子方案：最初从对话记录推断模式，可被模型写进工具参数的文字和命令行环境变量伪造。第 12 轮评审后，记录从只绑定 requestId 改为绑定整次调用，并缩短有效期。（2026-10-05） | §7.4 |
 | U22 | **文档与变更记录门禁**：每次影响用户的改动都要同步更新相关文档，并在 `CHANGELOG.md` 的 Unreleased 下写一条记录。提交门禁（`.githooks/pre-commit` 和 `pre-merge-commit` → `scripts/docs-gate.mjs`；`npm install` 时自动启用，已设置 `core.hooksPath` 时不覆盖，CI 中跳过）会检查两件事：改了 `src/`（测试除外，改名的两端都算）、`plugins/`、`package.json` 或插件市场文件，却没在 `CHANGELOG.md` 里新增记录（删除或只改格式不算）的提交会被拦下，并列出需要核对的文档；同时扫描暂存内容（即将提交的版本）有没有隐私信息。`npm version` 会把 Unreleased 改为新版本一节；`npm publish` 前 `prepublishOnly` 检查当前版本有没有对应的记录，并扫描最终 npm 包。紧急情况可用 `git commit --no-verify` 绕过，不作为常规做法。（2026-10-05） | §15 |
+| U23 | **思考强度可显式指定，与模型同等对待**：`turnweft_session create` / `session create` 新增可选的 `effort`，取值直接用各 Agent 自己的值（Dim `thought_level`、Droid / Grok `reasoning_effort`、OpenCode `effort`、agy `--effort`），Turnweft 不做统一换算，也不设产品默认值（与 U12 一致）。它随会话保存，每次打开或恢复会话都在模型之后重新设置。ACP 目标按 `category: "thought_level"` 找配置项（找不到时退回已知 id），先按当前模型的可选值校验，再设置并读回核对；不提供、设置失败或读回不一致都以 `invalid_effort` 让本轮失败，prompt 不发出，绝不在别的强度下运行。agy 读不回，结果里的 effective 就是启动参数。结果和 `config.readback` 事件写明 requested 与 effective。已有会话暂不支持改强度。起因：经 Turnweft 派出的 Dim 实现席一直是 auto，Dim 也没有可改的持久默认值（M0 §2.1）。（2026-10-05） | §12 |
 
 模型 ID 的核对范围：本机 Droid 0.233.0 的 `--list-tools` 校验接受 `glm-5.3-flash`（内置模型）；Dim 0.5.16 的 `dim model list` 列出了 `dimcode-api-oauth/deepseek-v4.1-flash`。两者此后都已用于真实任务测试（见 `docs/e2e/E2E_RESULTS.md`）。
 
@@ -515,7 +516,7 @@ MCP 前端重启与核心 runtime 崩溃是两个不同测试场景。前者应�
 
 `send` / `delegate` 在请求可靠落盘后立即返回 job ID，不等待模型结果。查询默认立即返回；有界等待必须短于 M0 实测的宿主工具超时。不要假设旧 README 写的 300 秒或 MCP SDK 默认的 60 秒就是当前宿主的上限。
 
-默认不擅自覆盖 provider 的模型与 reasoning 设置；显式指定时回报 requested 与 effective 值。并发数和预算设可配置上限，真实费用未知时标 unknown，不估造 token 或成本。
+默认不擅自覆盖 provider 的模型与 reasoning 设置；显式指定时回报 requested 与 effective 值（思考强度见 U23）。并发数和预算设可配置上限，真实费用未知时标 unknown，不估造 token 或成本。
 
 数据保留与清理应保护活跃任务和待恢复 session。默认诊断输出省略凭据、完整环境和私有路径；支持用户显式导出脱敏诊断包。
 
@@ -638,7 +639,7 @@ M0 先定位用户已有安装，区分桌面入口与 CLI shim、登录 shell �
 
 ## 12. 模型、认证、隐私和配置
 
-Turnweft 使用各 Agent 现有登录和订阅，不集中管理厂商 API key，不复制认证文件，不直接改写原生数据库（U14 中 Dim 经由它自己受支持的 ACP 接口持久化 workspace 模型选择，是已获用户接受的例外）。**产品默认不指定 model**，沿用各 Agent 自己的配置。用户显式要求某个模型时，按 session 或本轮传入，映射、核验，并在结果中显示 requested 与 effective；模型失效时报告，不静默换模型。U12 的 `glm-5.3-flash` / `dimcode-api-oauth/deepseek-v4.1-flash` 只用于开发测试（§14.1），以测试配置的形式显式传入，不写进产品默认配置。Droid 原生 stream-json 用 `-m` 传入；Stream JSON-RPC 模式下 `-m` 不生效。
+Turnweft 使用各 Agent 现有登录和订阅，不集中管理厂商 API key，不复制认证文件，不直接改写原生数据库（U14 中 Dim 经由它自己受支持的 ACP 接口持久化 workspace 模型选择，是已获用户接受的例外）。**产品默认不指定 model**，沿用各 Agent 自己的配置。用户显式要求某个模型时，按 session 或本轮传入，映射、核验，并在结果中显示 requested 与 effective；模型失效时报告，不静默换模型。思考强度（U23）同理：按 session 传入，在模型之后设置，按当前模型的可选值校验并读回核对，不符就失败，不静默改用别的强度。U12 的 `glm-5.3-flash` / `dimcode-api-oauth/deepseek-v4.1-flash` 只用于开发测试（§14.1），以测试配置的形式显式传入，不写进产品默认配置。Droid 原生 stream-json 用 `-m` 传入；Stream JSON-RPC 模式下 `-m` 不生效。
 
 **Dim 的模型副作用（U14）。** 只在显式指定模型时出现。Dim ACP 设置模型时会调用 `switchProvider(..., { cwd })`，在事务中持久写入该 **workspace** 的 `providerSelections`。Turnweft 总是传入 canonical project 作为 cwd，所以只改变 Dim 中该项目的默认 provider / model，不改全局默认（不带 cwd 时才会写全局，Turnweft 不走这条分支）。用户已接受这个副作用。规则如下：续接时先读回当前模型，已经是目标模型就不重复设置；首次设置时在结果中写明“该项目的 Dim 默认模型已改为 …”；不做“事后还原”，以免覆盖用户中途的主动修改。将来如果证实存在只作用于当前 session 的设置方式，就改用那种方式。
 

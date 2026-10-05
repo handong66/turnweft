@@ -27,6 +27,21 @@
 
 session ID 格式不统一：Dim 为 `sess_<ts>_<rand>`，OpenCode 为 `ses_…`，Droid 和 Grok 为 UUID。“只接受 UUID”只能作为针对具体 adapter 的规则。
 
+### 2.1 思考强度（U23，2026-10-05，无 prompt）
+
+四个 ACP 目标都有一个 `category: "thought_level"` 的 select 配置项，只是 id 不同；agy 只有启动参数。可选值随模型变化，下表是测试机上各自默认模型的结果。
+
+| 目标 | 配置项 | 默认值 | 可选值 | 其他模型下的变化 | 非法值 |
+| --- | --- | --- | --- | --- | --- |
+| Dim | `thought_level` | auto | auto / none / high / max | glm-5.3-flash：auto / high / max | `Invalid params: Unknown ACP thought level value` |
+| Droid | `reasoning_effort` | high | none / low / medium / high / xhigh / max | glm-5.3-flash：low / high / max | set 返回 `{}`，不报错，强度保持不变：**只能靠读回发现** |
+| Grok | `reasoning_effort` | high | low / medium / high / xhigh | — | 未测 |
+| OpenCode | `effort` | low | low / high / max / default | ling-3.1-flash-free：low / medium / high / default；**切换模型会把强度重置为 low** | 未测 |
+| agy 1.2.17 | `--effort` | — | low / medium / high / xhigh / max | — | 启动即退出：`invalid --effort "…" (valid: …)`；init 事件不回报强度 |
+
+- Dim 的 `thought_level` 只作用于当前 session：设成 max 后新开 session（同目录或别的目录）仍是 auto，没有可改的持久默认值。
+- 因此 Turnweft 的顺序是：权限档位 → 模型 → 思考强度，并按当前模型的可选值校验、再读回核对。
+
 ## 3. 真实任务（ACP，消耗额度）
 
 场景：①在真实测试目录修两个 bug 并跑测试，同时记住一个随机口令；②同一进程内追问口令（L1）；③关闭进程，新进程 `session/load` 后追问口令（L2）；④让它执行 `sleep 45`，12 秒后发 `session/cancel`。Turnweft 探针对所有权限请求回答 `allow_once`。

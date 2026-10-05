@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY, provider TEXT NOT NULL, name TEXT, canonical_root TEXT NOT NULL, cwd TEXT,
   native_session_id TEXT, state TEXT NOT NULL, broken_reason TEXT, host_bindings TEXT NOT NULL,
-  capabilities TEXT, cli_version TEXT, requested_model TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  capabilities TEXT, cli_version TEXT, requested_model TEXT, requested_effort TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, session_id TEXT NOT NULL, request_id TEXT NOT NULL UNIQUE, intent TEXT NOT NULL,
   prompt TEXT NOT NULL, prompt_digest TEXT NOT NULL, state TEXT NOT NULL, failure_reason TEXT, error_code TEXT,
@@ -55,7 +55,7 @@ function rowToSession(r: Row): Session {
     cwd: String(r.cwd ?? r.canonical_root),
     nativeSessionId: s(r.native_session_id), state: r.state as SessionState, brokenReason: s(r.broken_reason),
     hostBindings: j<HostBinding[]>(r.host_bindings) ?? [], capabilities: j<AgentCapabilities>(r.capabilities),
-    cliVersion: s(r.cli_version), requestedModel: s(r.requested_model),
+    cliVersion: s(r.cli_version), requestedModel: s(r.requested_model), requestedEffort: s(r.requested_effort),
     createdAt: String(r.created_at), updatedAt: String(r.updated_at),
   };
 }
@@ -135,6 +135,7 @@ export class Store {
     if (!lease.has("native_pid")) this.db.exec("ALTER TABLE leases ADD COLUMN native_pid INTEGER");
     if (!lease.has("native_token")) this.db.exec("ALTER TABLE leases ADD COLUMN native_token TEXT");
     if (!cols("sessions").has("cwd")) this.db.exec("ALTER TABLE sessions ADD COLUMN cwd TEXT");
+    if (!cols("sessions").has("requested_effort")) this.db.exec("ALTER TABLE sessions ADD COLUMN requested_effort TEXT");
     if (!cols("jobs").has("proposal_id")) this.db.exec("ALTER TABLE jobs ADD COLUMN proposal_id TEXT");
     for (const c of ["host_bypass", "host_bypass_digest"]) if (!cols("jobs").has(c)) this.db.exec(`ALTER TABLE jobs ADD COLUMN ${c} TEXT`);
     const pc = cols("proposals");
@@ -157,10 +158,10 @@ export class Store {
   // ------------------------------------------------------------ sessions
   insertSession(x: Session) {
     this.db.prepare(`INSERT INTO sessions (id, provider, name, canonical_root, cwd, native_session_id, state, broken_reason,
-      host_bindings, capabilities, cli_version, requested_model, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      host_bindings, capabilities, cli_version, requested_model, requested_effort, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(x.id, x.provider, x.name ?? null, x.canonicalRoot, x.cwd, x.nativeSessionId ?? null, x.state, x.brokenReason ?? null,
         JSON.stringify(x.hostBindings), x.capabilities ? JSON.stringify(x.capabilities) : null, x.cliVersion ?? null,
-        x.requestedModel ?? null, x.createdAt, x.updatedAt);
+        x.requestedModel ?? null, x.requestedEffort ?? null, x.createdAt, x.updatedAt);
   }
 
   getSession(id: string): Session | undefined {

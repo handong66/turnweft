@@ -25,6 +25,8 @@ export interface AgentCapabilities {
   permissions: "callback" | "native-policy" | "coarse" | "unverified";
   structuredEvents: "exact" | "inferred" | "none";
   modelConfig: "session" | "launch" | "provider-default";
+  /** How a thinking level (U23) is applied: an ACP thought_level option, a launch flag, or not at all. */
+  effortConfig: "session" | "launch" | "unsupported";
 }
 
 export interface ProbeResult {
@@ -122,6 +124,8 @@ export interface Session {
   cliVersion?: string;
   /** Model explicitly requested for this session (never a product default; U12). */
   requestedModel?: string;
+  /** Thinking level explicitly requested for this session, in the provider's own values (U23; never a product default). */
+  requestedEffort?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -217,6 +221,8 @@ export interface JobResult {
   truncated: boolean;
   permission?: PermissionMapping;
   model?: { requested?: string; effective?: string };
+  /** U23: thinking level. `effective` is the provider's read-back; for launch-flag providers (agy) it is the flag passed. */
+  effort?: { requested?: string; effective?: string };
   files?: FileChangeEvidence;
   toolCalls: Array<{ kind?: string; title?: string; status?: string }>;
 }

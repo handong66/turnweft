@@ -21,6 +21,8 @@ export interface OpenInput {
   nativeSessionId?: string;
   tier: TierSpec;
   model?: string;
+  /** U23: provider-native thinking level. */
+  effort?: string;
 }
 
 export interface OpenResult {
@@ -29,6 +31,7 @@ export interface OpenResult {
   /** Read-back native settings after applying the tier (config options, mode, etc.). */
   effective: Record<string, string>;
   model?: { requested?: string; effective?: string };
+  effort?: { requested?: string; effective?: string };
 }
 
 export type AdapterEvent =
@@ -64,7 +67,7 @@ export interface Connection {
 export interface ConnectHooks { onSpawn?(pid: number): void }
 
 export class AdapterError extends Error {
-  constructor(public code: "session_not_found" | "auth_required" | "provider_error" | "capability_mismatch" | "not_installed" | "connection_lost", message: string) {
+  constructor(public code: "session_not_found" | "auth_required" | "provider_error" | "capability_mismatch" | "not_installed" | "connection_lost" | "invalid_effort", message: string) {
     super(message);
   }
 }

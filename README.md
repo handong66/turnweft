@@ -114,7 +114,17 @@ Ask Droid to explain what this project does, in five bullet points.
 - "Continue with the same Dim session: why did you choose that library?"
 - "Cancel the Droid task."
 
-You can name a model if you want one ("use Droid with glm-5.3-flash"). Otherwise each agent uses its own default.
+You can name a model if you want one ("use Droid with glm-5.3-flash"), and a thinking level too ("use Dim with thinking level max"). Otherwise each agent uses its own defaults. Thinking levels use each agent's own values, and the exact set depends on the model:
+
+| Agent | Thinking levels | Applied as |
+| --- | --- | --- |
+| Dim | `auto`, `none`, `high`, `max` | ACP option `thought_level` |
+| Droid | `none`, `low`, `medium`, `high`, `xhigh`, `max` | ACP option `reasoning_effort` |
+| Grok | `low`, `medium`, `high`, `xhigh` | ACP option `reasoning_effort` |
+| OpenCode | `low`, `high`, `max`, `default` (some models: `medium`) | ACP option `effort` |
+| agy | `low`, `medium`, `high`, `xhigh`, `max` | `--effort` at launch |
+
+Model and thinking level are fixed when the session is created and re-applied whenever it is resumed. If the agent doesn't offer the level with that model, the first task fails with `invalid_effort` before anything is sent, and the error lists the levels it does offer. Results report the level requested and the level the agent reports.
 
 ## Permissions and safety
 
@@ -232,6 +242,7 @@ turnweft session close tws_…
 - Grok's actual permission mode can't be read back; Turnweft infers it from `~/.grok/config.toml`. OpenCode's effective permission rules can't be read back either. Results say so.
 - OpenCode's ACP doesn't report provider errors such as an exhausted quota, so Turnweft only detects them through the inactivity timeout.
 - Setting a Dim model explicitly changes that workspace's default model for good. Results mention it.
+- A thinking level can't be changed on an existing session; create a new one. agy doesn't report its level back, so for agy the result shows the level that was passed at launch.
 - Claude Code and Codex are hosts, not targets: Turnweft doesn't delegate work to them.
 
 ## Uninstall
@@ -255,7 +266,7 @@ npm install         # also enables the repository's git hooks (unless core.hooks
 npm run build
 npm link            # the turnweft command now runs this checkout
 npm test            # core and host-layer tests with simulated agents; no model quota used
-node scripts/live-smoke.mjs droid --model <model>   # real agent end to end (uses quota)
+node scripts/live-smoke.mjs droid --model <model> [--effort <level>]   # real agent end to end (uses quota)
 ```
 
 Every change that affects users updates the docs and adds an entry to [CHANGELOG.md](CHANGELOG.md). The git hooks check this on every commit and merge, and scan the staged content for private data. Publishing requires a changelog section for the version and scans the final package automatically. Change versions only with `npm version <v>`; it keeps the plugin manifests in sync.

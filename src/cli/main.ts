@@ -26,7 +26,7 @@ export interface CliIO {
 
 const options = {
   json: { type: "boolean" }, help: { type: "boolean", short: "h" },
-  agent: { type: "string" }, cwd: { type: "string" }, name: { type: "string" }, model: { type: "string" },
+  agent: { type: "string" }, cwd: { type: "string" }, name: { type: "string" }, model: { type: "string" }, effort: { type: "string" },
   session: { type: "string" }, intent: { type: "string" }, "prompt-file": { type: "string" }, "request-id": { type: "string" },
   policy: { type: "string" }, "include-closed": { type: "boolean" }, refresh: { type: "boolean" },
   "wait-ms": { type: "string" }, "after-seq": { type: "string" }, "include-result": { type: "boolean" },
@@ -162,7 +162,7 @@ export async function runCli(
       case "agents": if (action !== "list") throw new Error("Expected agents list"); only(["refresh"], 2); break;
       case "session":
         switch (action) {
-          case "create": only(["agent", "cwd", "name", "model"], 2); required(agent(), "--agent"); required(values.cwd, "--cwd"); break;
+          case "create": only(["agent", "cwd", "name", "model", "effort"], 2); required(agent(), "--agent"); required(values.cwd, "--cwd"); break;
           case "list": only(["cwd", "agent", "include-closed"], 2); agent(); break;
           case "get": case "attach": only([], 3); required(id, "sessionId"); break;
           case "close": only(["policy"], 3); required(id, "sessionId"); if (values.policy !== undefined && !["reject_if_busy", "cancel_running"].includes(values.policy)) throw new Error("Invalid --policy"); break;
@@ -201,7 +201,7 @@ export async function runCli(
       case "doctor": case "agents": envelope = success(await service.listAgents({ refresh: values.refresh })); break;
       case "session":
         switch (action) {
-          case "create": envelope = success(await service.createSession({ provider: agent()!, cwd: values.cwd!, name: values.name, model: values.model, host })); break;
+          case "create": envelope = success(await service.createSession({ provider: agent()!, cwd: values.cwd!, name: values.name, model: values.model, effort: values.effort, host })); break;
           case "list": envelope = success(await service.listSessions({ canonicalRoot: values.cwd, provider: agent(), includeClosed: values["include-closed"] })); break;
           case "get": {
             const session = await service.getSession(id!);
