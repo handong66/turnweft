@@ -134,6 +134,8 @@ CC 的 `auto` 模式及其他非 bypass 模式照常弹窗，由 `src/tests/host
 | CC，`default`，先用 Bash 写入伪造的 bypass 钩子记录，再调用 | ✅ 伪造记录被钩子用真实模式覆盖，仍为 `waiting_confirmation`，文件未写入 |
 | Codex，`-s danger-full-access` | ✅ 直接执行，文件已写入 |
 
+第 12 轮评审后（33d1601），钩子记录改为绑定整次调用（工具 + 全部任务参数）、有效期 15 秒、参数无效也会被消耗。CC 插件从 GitHub 重装后复测：`bypassPermissions` 直接执行（说明钩子和运行时对真实调用参数算出的摘要一致），`default` 进入 `waiting_confirmation`，结束后 `~/.turnweft/host-mode/` 下没有残留记录。
+
 ## 4. 插件启动器
 
 - 运行时已安装（`npm link`，`/opt/homebrew/bin/turnweft` 为指向 `dist/cli/main.js` 的符号链接）：启动器找到运行时，并成功启动 `turnweft mcp`（上面第 2 节即经由它运行）。
