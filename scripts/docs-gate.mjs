@@ -42,20 +42,22 @@ const versions = (text) => [...text.matchAll(/^## \[(\d[^\]]*)\]/gm)].map((m) =>
 
 /**
  * True if CHANGELOG.md gained a real entry: a line under [Unreleased] whose text appeared nowhere in the previous
- * file (re-indenting or moving an old entry does not count), or a new version section (`npm version`).
+ * file (re-indenting or moving an old entry does not count). A release counts only together with the actual
+ * package.json version change: the new version's section exists, has entries, and no old heading disappeared.
  */
-export function changelogAdvanced(before, after) {
+export function changelogAdvanced(before, after, release) {
   const old = new Set(entries(before));
   if (entries(after, "Unreleased").some((e) => !old.has(e))) return true;
-  const had = new Set(versions(before));
-  return versions(after).some((v) => !had.has(v));
+  if (!release || release.from === release.to) return false;
+  const kept = versions(before).every((v) => versions(after).includes(v));
+  return kept && !versions(before).includes(release.to) && entries(after, release.to).length > 0;
 }
 
-export function gate(changes, before, after) {
+export function gate(changes, before, after, release) {
   const userFacing = [...new Set(changes.flatMap((c) => c.paths).filter(isUserFacing))];
   if (!userFacing.length) return { ok: true, userFacing };
   const log = changes.find((c) => c.paths.includes("CHANGELOG.md"));
-  const ok = Boolean(log) && log.status !== "D" && changelogAdvanced(before, after);
+  const ok = Boolean(log) && log.status !== "D" && changelogAdvanced(before, after, release);
   return { ok, userFacing };
 }
 
@@ -70,8 +72,9 @@ export const DOCS_TO_CHECK = [
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   const changes = parseNameStatus(git("diff", "--cached", "--name-status", "-z", "-M"));
-  const show = (rev) => { try { return git("show", `${rev}:CHANGELOG.md`); } catch { return ""; } };
-  const r = gate(changes, show("HEAD"), show(""));
+  const show = (rev, file = "CHANGELOG.md") => { try { return git("show", `${rev}:${file}`); } catch { return ""; } };
+  const version = (rev) => { try { return JSON.parse(show(rev, "package.json")).version; } catch { return undefined; } };
+  const r = gate(changes, show("HEAD"), show(""), { from: version("HEAD"), to: version("") });
   if (!r.ok) {
     console.error("Commit blocked: user-facing files changed without a new CHANGELOG.md entry.\n");
     console.error("Changed: " + r.userFacing.join(", ") + "\n");

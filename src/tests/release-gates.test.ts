@@ -30,7 +30,13 @@ test("round 14/15: deleting, reformatting or re-indenting CHANGELOG.md does not 
   assert.equal(gate(ns(worker, ["M", "CHANGELOG.md"]), BEFORE, BEFORE.replace("- Existing entry", "  - Existing entry")).ok, false, "re-indented old entry");
   assert.equal(gate(ns(worker, ["M", "CHANGELOG.md"]), BEFORE, BEFORE.replace("- Existing entry", "- Existing entry\n- Sneaky")).ok, false, "entry added to an old release, not Unreleased");
   assert.equal(changelogAdvanced(BEFORE, BEFORE.replace("## [Unreleased]\n", "## [Unreleased]\n- Existing entry\n")), false, "moving an old entry into Unreleased");
-  assert.equal(changelogAdvanced(AFTER, AFTER.replace("## [Unreleased]\n- Fixed the thing.\n", "## [Unreleased]\n\n## [0.2.0] - 2026-02-02\n- Fixed the thing.\n")), true, "npm version release");
+  const released = AFTER.replace("## [Unreleased]\n- Fixed the thing.\n", "## [Unreleased]\n\n## [0.2.0] - 2026-02-02\n- Fixed the thing.\n");
+  assert.equal(changelogAdvanced(AFTER, released, { from: "0.1.0", to: "0.2.0" }), true, "npm version release");
+  // Round 16: a release only counts with the real package.json version change and a non-empty, matching section.
+  assert.equal(changelogAdvanced(AFTER, released), false, "no version change in package.json");
+  assert.equal(changelogAdvanced(BEFORE, BEFORE.replace("## [Unreleased]\n", "## [Unreleased]\n\n## [9.9.9] - x\n"), { from: "0.1.0", to: "9.9.9" }), false, "empty version heading");
+  assert.equal(changelogAdvanced(BEFORE, BEFORE.replace("## [0.1.0]", "## [0.1.1]"), { from: "0.1.0", to: "0.1.1" }), false, "renaming an old heading");
+  assert.equal(changelogAdvanced(BEFORE, BEFORE.replace("## [Unreleased]\n", "## [Unreleased]\n\n## [9.9.9] - x\n- y\n"), { from: "0.1.0", to: "0.2.0" }), false, "section for a different version");
   const moved = ns(["R100", "src/runtime/ids.ts", "src/tests/ids.ts"]);
   assert.deepEqual(moved[0], { status: "R", paths: ["src/runtime/ids.ts", "src/tests/ids.ts"] });
   assert.equal(gate(moved, BEFORE, BEFORE).ok, false, "moving production code into tests is still a user-facing change");
