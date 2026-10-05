@@ -10,12 +10,19 @@ import { AdapterError, type TierSpec } from "../adapters/types.js";
 const fixture = fileURLToPath(new URL("./fake-acp-agent.js", import.meta.url));
 const tier: TierSpec = { tier: "t", excess: [], decide: () => "deny", satisfiedBy: () => true };
 
-async function open(style: string, input: { model?: string; effort?: string }) {
+async function open(style: string, input: { model?: string; effort?: string; nativeSessionId?: string }, after?: (c: AcpConnection) => Promise<void>) {
   const prev = process.env.FAKE_ACP_STYLE;
   process.env.FAKE_ACP_STYLE = style;
   const c = new AcpConnection({ command: process.execPath, args: [fixture], settingsFor: () => [], isSessionNotFound: () => false }, tmpdir());
   if (prev === undefined) delete process.env.FAKE_ACP_STYLE; else process.env.FAKE_ACP_STYLE = prev;
-  try { return await c.open({ cwd: tmpdir(), tier, ...input }); } finally { await c.close(); }
+  try { const r = await c.open({ cwd: tmpdir(), tier, ...input }); await after?.(c); return r; } finally { await c.close(); }
+}
+
+/** The level the agent really runs with, as its prompt reply reports it. */
+async function realLevel(c: AcpConnection): Promise<string> {
+  let text = "";
+  await c.prompt("which level?", (e) => { if (e.type === "text") text += e.text; });
+  return text;
 }
 
 const invalid = (re: RegExp) => (e: unknown) => e instanceof AdapterError && e.code === "invalid_effort" && re.test(e.message);
@@ -56,4 +63,23 @@ test("U23: unknown values, and agents without a thinking-level option, fail with
   assert.deepEqual((await open("none", {})).effort, { requested: undefined, effective: undefined });
   // An offered value the agent silently keeps at another level: only the read-back counts.
   await assert.rejects(open("stubborn", { effort: "low" }), invalid(/requested effort "low" but the agent reports "high"/));
+});
+
+test("U23 review: a load answer newer than the real state cannot make Turnweft skip the set", async () => {
+  let real = "";
+  const r = await open("staleload", { nativeSessionId: "fake-acp-1", effort: "high" }, async (c) => { real = await realLevel(c); });
+  assert.equal(real, "level=high", "the agent actually runs at the requested level");
+  assert.deepEqual(r.effort, { requested: "high", effective: "high" });
+});
+
+test("U23 review: an option that disappears after a model switch is not validated against stale values", async () => {
+  await assert.rejects(open("vanish", { model: "m2", effort: "high" }), invalid(/no thinking-level option/));
+  let live: string | undefined = "unset";
+  const r = await open("vanish", { model: "m2" }, async (c) => { live = c.currentEffort(); });
+  assert.equal(r.effort?.effective, undefined);
+  assert.equal(live, undefined, "the old level is dropped with the option");
+});
+
+test("U23 review: an empty effort is a request, not an omission", async () => {
+  await assert.rejects(open("dim", { effort: "" }), invalid(/"" is not offered/));
 });

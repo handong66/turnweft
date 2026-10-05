@@ -24,6 +24,9 @@ export class AgyConnection implements Connection {
 
   currentEffective() { return { ...this.effectiveSnapshot }; }
 
+  private launchEffort?: string;
+  currentEffort() { return this.launchEffort; }
+
   get pid() { return this.proc?.pid; }
 
   async open(input: OpenInput): Promise<OpenResult> {
@@ -32,7 +35,8 @@ export class AgyConnection implements Connection {
     const args = ["--input-format", "stream-json", "--output-format", "stream-json", "--add-dir", input.cwd];
     if (skip) args.push("--dangerously-skip-permissions", "--mode", "accept-edits");
     if (input.model) args.push("--model", input.model);
-    if (input.effort) args.push("--effort", input.effort); // U23: launch flag; agy rejects unknown values at startup
+    // U23: launch flag; agy rejects unknown values at startup.
+    if (input.effort !== undefined) { args.push("--effort", input.effort); this.launchEffort = input.effort; }
     if (input.nativeSessionId) args.push("--conversation", input.nativeSessionId);
     args.push("-p=");
     this.proc = spawn(this.exe, args, { cwd: input.cwd, stdio: ["pipe", "pipe", "pipe"], detached: true, env: providerEnv(this.exe) });

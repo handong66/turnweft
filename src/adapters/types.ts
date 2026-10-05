@@ -61,6 +61,8 @@ export interface Connection {
   readonly hasExited: boolean;
   /** Current native settings snapshot, kept up to date for the connection's whole life (round 3, finding 6). */
   currentEffective(): Record<string, string>;
+  /** U23: the thinking level in effect now (live read-back; for launch-flag providers, the flag passed). */
+  currentEffort(): string | undefined;
 }
 
 /** Called the moment the provider process is spawned, before any protocol exchange (round 3, finding 4). */

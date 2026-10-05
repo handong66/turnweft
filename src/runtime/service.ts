@@ -41,6 +41,10 @@ export class LocalService implements TurnweftService {
 
   async createSession(input: CreateSessionInput): Promise<Session> {
     if (!PROVIDERS.includes(input.provider)) throw new ServiceError("unknown_provider", `unknown provider ${input.provider}`);
+    // An empty value would otherwise be dropped silently and the agent would run at its default.
+    for (const [key, value] of [["model", input.model], ["effort", input.effort]] as const) {
+      if (value !== undefined && (typeof value !== "string" || !value.trim())) throw new ServiceError("invalid_arguments", `${key} must be a non-empty string when given`);
+    }
     let root: string;
     let cwd: string;
     try { cwd = workingDir(input.cwd); root = canonicalRoot(cwd); } catch (e) {

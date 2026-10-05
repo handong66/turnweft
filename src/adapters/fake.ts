@@ -8,6 +8,7 @@
 //   TURNWEFT_FAKE_REAL_PROC=1        spawn a real process group (sh leader + background child) as the "provider"
 // Extra directive: STOP:<reason> returns that stopReason.
 // Thinking level (U23): offers low / medium / high (default "auto"); any other requested value fails open() with invalid_effort.
+// Directive EFFORT:<level> changes the live level after the turn, as if the agent had switched it.
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -33,6 +34,7 @@ class FakeConnection implements Connection {
   constructor(private cwd: string, private hooks: ConnectHooks = {}) {}
 
   currentEffective() { return { ...this.snapshot }; }
+  currentEffort() { return this.snapshot.effort; }
 
   private exit(signal: string | null) {
     if (this.hasExited) return;
@@ -50,7 +52,7 @@ class FakeConnection implements Connection {
     const delay = Number(process.env.TURNWEFT_FAKE_OPEN_DELAY_MS ?? 0);
     if (delay) await new Promise((r) => setTimeout(r, delay));
     this.tier = input.tier;
-    if (input.effort && !FAKE_EFFORTS.includes(input.effort)) throw new AdapterError("invalid_effort", `effort "${input.effort}" is not offered; fake offers ${FAKE_EFFORTS.join(", ")}`);
+    if (input.effort !== undefined && !FAKE_EFFORTS.includes(input.effort)) throw new AdapterError("invalid_effort", `effort "${input.effort}" is not offered; fake offers ${FAKE_EFFORTS.join(", ")}`);
     if (input.nativeSessionId) {
       if (!existsSync(join(histDir(), `${input.nativeSessionId}.json`))) throw new AdapterError("session_not_found", `fake session ${input.nativeSessionId} not found`);
       this.id = input.nativeSessionId;
@@ -75,6 +77,7 @@ class FakeConnection implements Connection {
       const [cmd, arg = ""] = line.split(/:(.*)/s, 2) as [string, string?];
       if (cmd === "REMEMBER") { hist.memory.token = arg; onEvent({ type: "text", text: `remembered ${arg}\n` }); }
       else if (cmd === "RECALL") onEvent({ type: "text", text: hist.memory.token ?? "(nothing)" });
+      else if (cmd === "EFFORT") this.snapshot.effort = arg;
       else if (cmd === "SAY") onEvent({ type: "text", text: arg }); // no trailing newline, like streamed agent text
       else if (cmd === "TOOL") onEvent({ type: "tool", kind: "read", title: arg, status: "completed" });
       else if (cmd === "WRITE") {

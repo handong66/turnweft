@@ -950,3 +950,20 @@ test("U23: upgrading adds requested_effort to an existing sessions table", async
   st.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("U23 review: a level that drifts between turns is re-applied before the next turn, and results show the live level", async () => {
+  const s = await svc.createSession({ provider: "droid", cwd: repo(), host, effort: "high" });
+  const a = await waitDone((await submit(s.id, "SAY:one\nEFFORT:low", "analyze")).id);
+  assert.equal(a.job.state, "succeeded");
+  const b = await waitDone((await submit(s.id, "SAY:two", "analyze")).id);
+  assert.equal(b.job.state, "succeeded");
+  assert.deepEqual(b.result!.effort, { requested: "high", effective: "high" }, "reopened and re-applied, not the cached value");
+  const readback = b.events.find((e) => e.type === "config.readback")!.payload as { effective: Record<string, string> };
+  assert.equal(readback.effective.effort, "high", "the live snapshot itself is back at the requested level");
+});
+
+test("U23 review: empty model or effort is rejected instead of silently using the default", async () => {
+  for (const bad of [{ effort: "" }, { effort: "  " }, { model: "" }]) {
+    await assert.rejects(svc.createSession({ provider: "droid", cwd: repo(), host, ...bad }), (e: Error & { code?: string }) => e.code === "invalid_arguments");
+  }
+});

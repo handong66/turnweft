@@ -52,6 +52,7 @@ export class AcpConnection implements Connection {
   private tier?: TierSpec;
   private effective: Record<string, string> = {};
   private meta: Record<string, OptionMeta> = {};
+  private configUpdates = 0;
   private onEvent: ((e: AdapterEvent) => void) | undefined;
   private initialized?: Promise<unknown>;
   readonly exited: Promise<{ code: number | null; signal: string | null }>;
@@ -87,6 +88,11 @@ export class AcpConnection implements Connection {
 
   currentEffective() { return { ...this.effective, ...(this.profile.staticEffective?.() ?? {}) }; }
 
+  currentEffort() {
+    const id = this.thoughtLevelId();
+    return id ? this.effective[id] : undefined;
+  }
+
   private handleUpdate(u: Json) {
     this.lastUpdateAt = Date.now();
     switch (u.sessionUpdate) {
@@ -102,6 +108,7 @@ export class AcpConnection implements Connection {
         break;
       case "config_option_update":
         this.absorb(u.configOptions);
+        this.configUpdates++;
         this.onEvent?.({ type: "config", effective: { ...this.effective } });
         break;
       case "current_mode_update":
@@ -153,7 +160,7 @@ export class AcpConnection implements Connection {
     // U23: the thinking level goes last. Its values depend on the model, and a model switch can reset it
     // (live: OpenCode falls back to low), so it is checked against what the current model offers.
     const effortId = this.thoughtLevelId();
-    if (input.effort) await this.applyEffort(effortId, input.effort);
+    if (input.effort !== undefined) await this.applyEffort(effortId, input.effort);
     const effective = { ...this.effective, ...(this.profile.staticEffective?.() ?? {}) };
     return {
       nativeSessionId: this.sessionId,
@@ -164,9 +171,13 @@ export class AcpConnection implements Connection {
     };
   }
 
+  /** Responses and config_option_update carry the full option list, so it replaces the previous one. */
   private absorb(options: unknown) {
+    if (!Array.isArray(options) || !options.length) return;
+    const next = optionMeta(options);
+    for (const id of Object.keys(this.meta)) if (!(id in next)) delete this.effective[id];
+    this.meta = next;
     Object.assign(this.effective, configMap(options));
-    Object.assign(this.meta, optionMeta(options));
   }
 
   private async apply(configId: string, value: string) {
@@ -189,7 +200,15 @@ export class AcpConnection implements Connection {
     const reject = (why: string) => new AdapterError("invalid_effort",
       `${why}; ${id} offers ${offered.length ? offered.join(", ") : "no listed values"}${model}. Create a new session with one of these values, or without effort.`);
     if (offered.length && !offered.includes(value)) throw reject(`effort "${value}" is not offered`);
-    try { await this.apply(id, value); } catch (e) { throw reject(`setting ${id} to "${value}" failed: ${errText(e)}`); }
+    // Always set it, even when the cache already shows the value: replayed history during load can leave the
+    // cache stale, and only a fresh answer counts as the read-back.
+    const seen = this.configUpdates;
+    let r: Json;
+    try {
+      r = await this.conn.setSessionConfigOption({ sessionId: this.sessionId, configId: id, value } as any) as Json;
+    } catch (e) { throw reject(`setting ${id} to "${value}" failed: ${errText(e)}`); }
+    if (Array.isArray(r?.configOptions) && r.configOptions.length) this.absorb(r.configOptions);
+    else await this.waitForUpdate(seen, 3000); // Droid answers {} and reports through config_option_update
     // Droid answers an unknown value with {} and keeps another level (live run), so only the read-back counts.
     if (this.effective[id] !== value) throw reject(`requested effort "${value}" but the agent reports "${this.effective[id] ?? "nothing"}"`);
   }
@@ -200,6 +219,11 @@ export class AcpConnection implements Connection {
     const until = Date.now() + maxMs;
     this.lastUpdateAt = Date.now();
     while (Date.now() < until && Date.now() - this.lastUpdateAt < quietMs) await new Promise((r) => setTimeout(r, 50));
+  }
+
+  private async waitForUpdate(seen: number, ms: number) {
+    const until = Date.now() + ms;
+    while (Date.now() < until && this.configUpdates === seen) await new Promise((r) => setTimeout(r, 50));
   }
 
   /** Droid answers set_config_option with {} and reports via config_option_update (M0 §3). */

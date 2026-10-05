@@ -63,7 +63,7 @@ export async function runWorker(sessionId: string, store = new Store()): Promise
   let conn: Connection | undefined;
   let connTier: string | undefined;
   let connVersion: string | undefined;
-  let lastOpen: { effective: Record<string, string>; model: JobResult["model"]; effort: JobResult["effort"] } = { effective: {}, model: undefined, effort: undefined };
+  let lastOpen: { effective: Record<string, string>; model: JobResult["model"] } = { effective: {}, model: undefined };
   let idleSince = Date.now();
   let nativeUnconfirmed = false;
   let frozen: string | undefined;
@@ -171,8 +171,8 @@ interface JobCtx {
   getConn(): Connection | undefined; getTier(): string | undefined; getVersion(): string | undefined;
   setConn(c: Connection | undefined, tier?: string, version?: string): void; closeConn(): Promise<boolean>;
   onSpawn(pid: number): void;
-  getLastOpen(): { effective: Record<string, string>; model: JobResult["model"]; effort: JobResult["effort"] };
-  setLastOpen(v: { effective: Record<string, string>; model: JobResult["model"]; effort: JobResult["effort"] }): void;
+  getLastOpen(): { effective: Record<string, string>; model: JobResult["model"] };
+  setLastOpen(v: { effective: Record<string, string>; model: JobResult["model"] }): void;
 }
 
 async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen"> {
@@ -211,7 +211,9 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
   let effort: JobResult["effort"];
   try {
     // Reopen when the tier changed or the installed CLI no longer matches the running process (round 2, 7).
-    if (x.getConn() && (x.getTier() !== tier.tier || x.getVersion() !== probe.cliVersion)) {
+    // U23: so does a thinking level that drifted from the request between turns; the reopen re-applies it.
+    const effortDrift = session.requestedEffort !== undefined && x.getConn()?.currentEffort() !== session.requestedEffort;
+    if (x.getConn() && (x.getTier() !== tier.tier || x.getVersion() !== probe.cliVersion || effortDrift)) {
       // A connection that cannot be proven stopped must never be replaced by a second one (round 3, finding 1).
       if (!(await x.closeConn())) {
         finish("failed", { errorCode: "provider_not_stopped", failureReason: "the previous provider process could not be confirmed stopped; session frozen" });
@@ -226,11 +228,11 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
         throw new AdapterError("session_not_found", `provider returned ${opened.nativeSessionId} instead of ${session.nativeSessionId}`);
       }
       store.updateSession(session.id, { nativeSessionId: opened.nativeSessionId, cliVersion: probe.cliVersion, capabilities: adapter.capabilities });
-      x.setLastOpen({ effective: opened.effective, model: opened.model, effort: opened.effort });
+      x.setLastOpen({ effective: opened.effective, model: opened.model });
     }
     // Read the connection's live snapshot, not a cached one: config can change between turns (round 3, finding 6).
     model = x.getLastOpen().model;
-    effort = x.getLastOpen().effort;
+    effort = { requested: session.requestedEffort, effective: x.getConn()!.currentEffort() };
     effective = { ...x.getLastOpen().effective, ...x.getConn()!.currentEffective() };
   } catch (e) {
     if (!(await x.closeConn())) {

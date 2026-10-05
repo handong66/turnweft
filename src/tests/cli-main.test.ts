@@ -170,6 +170,9 @@ test("U23: session create passes --model and --effort through unchanged", async 
   assert.equal(await runCli(["session", "create", "--agent", "dim", "--cwd", "/project", "--model", "m", "--effort", "max", "--json"], service, h.io), 0);
   const input = service.calls[0]!.input as { model?: string; effort?: string };
   assert.equal(input.model, "m"); assert.equal(input.effort, "max");
+  const empty = harness(); const passthrough = new FakeService();
+  await runCli(["session", "create", "--agent", "dim", "--cwd", "/project", "--effort", "", "--json"], passthrough, empty.io);
+  assert.equal((passthrough.calls[0]!.input as { effort?: string }).effort, "", "an empty value reaches the service, which rejects it");
 });
 
 test("separate CLI create, attach and send calls use the same CLI host identity", async () => {
