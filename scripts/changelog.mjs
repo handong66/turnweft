@@ -4,6 +4,8 @@
 //                                         (prepublishOnly)
 //   node scripts/changelog.mjs --release  turn "## [Unreleased]" into "## [<version>] - <date>" and add a fresh
 //                                         Unreleased section ("version" lifecycle, run by `npm version <v>`)
+//   node scripts/changelog.mjs --notes [v]  print the section for v (default: package.json's version), used as the
+//                                         GitHub Release notes: gh release create v<v> --notes-file <(... --notes)
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,11 +33,21 @@ export function release(text, v, date) {
   return out;
 }
 
+/** The body of one version's section (without its heading), for release notes. */
+export function notes(text, v) {
+  const parts = text.split(new RegExp(`^## \\[${esc(v)}\\][^\\n]*$`, "m"));
+  if (parts.length < 2) throw new Error(`CHANGELOG.md has no section for ${v}`);
+  return parts[1].split(/^## \[|^\[[^\]]+\]: /m)[0].trim() + "\n";
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const text = readFileSync(file, "utf8");
   if (process.argv.includes("--check")) {
     if (!hasSection(text, version)) { console.error(`CHANGELOG.md has no section for ${version}`); process.exit(1); }
   } else if (process.argv.includes("--release")) {
     writeFileSync(file, release(text, version, new Date().toISOString().slice(0, 10)));
-  } else { console.error("usage: changelog.mjs --check | --release"); process.exit(2); }
+  } else if (process.argv.includes("--notes")) {
+    const v = process.argv[process.argv.indexOf("--notes") + 1] ?? version;
+    process.stdout.write(notes(text, v.startsWith("--") ? version : v));
+  } else { console.error("usage: changelog.mjs --check | --release | --notes [version]"); process.exit(2); }
 }

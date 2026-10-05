@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const load = (p: string) => import(new URL(`../../scripts/${p}`, import.meta.url).href);
 const { gate, isUserFacing, parseNameStatus, changelogAdvanced } = await load("docs-gate.mjs");
-const { hasSection, release } = await load("changelog.mjs");
+const { hasSection, release, notes } = await load("changelog.mjs");
 
 const BEFORE = "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-01-01\n- Existing entry\n";
 const AFTER = "# Changelog\n\n## [Unreleased]\n- Fixed the thing.\n\n## [0.1.0] - 2026-01-01\n- Existing entry\n";
@@ -52,4 +52,11 @@ test("the repository changelog has a section for the package version", () => {
   const root = new URL("../../", import.meta.url);
   const version = JSON.parse(readFileSync(new URL("package.json", root), "utf8")).version;
   assert.equal(hasSection(readFileSync(new URL("CHANGELOG.md", root), "utf8"), version), true, `add a CHANGELOG.md section for ${version}`);
+});
+
+test("release notes are the version's changelog section, without the comparison links", () => {
+  const text = "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] - 2026-02-02\n\n### Fixed\n- b\n\n## [0.1.0] - 2026-01-01\n- a\n\n[Unreleased]: x\n[0.2.0]: y\n";
+  assert.equal(notes(text, "0.2.0"), "### Fixed\n- b\n");
+  assert.equal(notes(text, "0.1.0"), "- a\n");
+  assert.throws(() => notes(text, "9.9.9"), /no section/);
 });
