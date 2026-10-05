@@ -124,7 +124,7 @@ codex plugin add turnweft@turnweft
 | OpenCode | `low`、`high`、`max`、`default`（部分模型有 `medium`） | ACP 配置项 `effort` |
 | agy | `low`、`medium`、`high`、`xhigh`、`max` | 启动参数 `--effort` |
 
-对话中途也能调整思考强度，比如“接下来让 Dim 想得更深一点”。调整从下一个任务开始生效，用的还是同一个 Agent 会话，之前的上下文都在。Dim、Droid、Grok、OpenCode 直接在运行中的会话里改，和在它们自己的 CLI 里改一样；agy 只在启动时接受强度，Turnweft 会带上新强度重启 agy，并接回同一个对话。每次恢复会话都会重新设置强度。Agent 在当前模型下不提供这个强度时，该任务会以 `invalid_effort` 失败，此时什么都还没发出，错误信息里列出它实际提供的取值，会话本身仍可继续使用。结果里同时写明请求的强度和 Agent 读回的强度。
+对话中途也能调整思考强度，比如“接下来让 Dim 想得更深一点”。调整对之后开始的每个任务生效（已在运行的任务保持原强度），用的还是同一个 Agent 会话，之前的上下文都在。Dim、Droid、Grok、OpenCode 直接在运行中的会话里改，和在它们自己的 CLI 里改一样；agy 只在启动时接受强度，Turnweft 会带上新强度重启 agy，并接回同一个对话。每次恢复会话都会重新设置强度。Agent 在当前模型下不提供这个强度时，该任务会以 `invalid_effort` 失败，此时什么都还没发出，错误信息里列出它实际提供的取值，会话本身仍可继续使用。结果里同时写明请求的强度和 Agent 读回的强度。
 
 ## 权限与安全
 

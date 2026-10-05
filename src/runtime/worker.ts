@@ -176,8 +176,11 @@ interface JobCtx {
 }
 
 async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen"> {
-  const { store, adapter, session, job, generation, cfg } = x;
+  const { store, adapter, job, generation, cfg } = x;
   if (!store.casJobState(job.id, ["queued"], "starting", { ownerGeneration: generation, startedAt: now() })) return "done";
+  // U23: settings are read once the turn is claimed, so an update that finished before this turn started always
+  // applies to it; an update made after this point applies to later turns.
+  const session = store.getSession(x.session.id) ?? x.session;
   const finish = (state: JobState, extra: Partial<Job>, result?: JobResult, payload: Record<string, unknown> = {}) =>
     store.completeJob(job.id, generation, state, extra, result, { type: state === "succeeded" ? "turn.completed" : "turn.failed", payload: { state, errorCode: extra.errorCode, ...payload } });
   const cancelledBeforeDelivery = () => store.getJob(job.id)?.state === "cancel_requested";
@@ -234,9 +237,15 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
     // U23: the level was changed with session update, or drifted, since this connection was opened.
     const live = x.getConn()!;
     if (session.requestedEffort !== undefined && live.currentEffort() !== session.requestedEffort && live.setEffort) {
-      try { await live.setEffort(session.requestedEffort); } catch (e) {
-        // Not a connection problem: the session and its process stay as they are; nothing is sent.
-        if (e instanceof AdapterError && e.code === "invalid_effort") { finish("failed", { errorCode: e.code, failureReason: e.message }); return "done"; }
+      try { await withTimeout(live.setEffort(session.requestedEffort), cfg.openTimeoutMs, "provider effort change"); } catch (e) {
+        // Only a definite rejection keeps the connection: the level is known and nothing was sent. A timeout, a lost
+        // transport or a missing read-back leaves the level unknown, so the generic path below closes the connection
+        // and the next turn reopens and sets it again.
+        if (e instanceof AdapterError && e.code === "invalid_effort" && !e.stateUnknown) {
+          if (cancelledBeforeDelivery()) finish("cancelled", { failureReason: "cancelled before delivery" });
+          else finish("failed", { errorCode: e.code, failureReason: e.message });
+          return "done";
+        }
         throw e;
       }
     }

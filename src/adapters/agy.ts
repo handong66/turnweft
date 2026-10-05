@@ -25,6 +25,7 @@ export class AgyConnection implements Connection {
   currentEffective() { return { ...this.effectiveSnapshot }; }
 
   private launchEffort?: string;
+  private effortRejected = false;
   currentEffort() { return this.launchEffort; }
 
   get pid() { return this.proc?.pid; }
@@ -43,7 +44,12 @@ export class AgyConnection implements Connection {
     if (this.proc.pid) this.hooks.onSpawn?.(this.proc.pid); // record before waiting for init (round 3, finding 4)
     this.proc.on("exit", (code, signal) => { this.hasExited = true; this.exitResolve({ code, signal }); this.waiter?.({ exited: { code, signal } }); });
     this.proc.on("error", () => { /* surfaced via exited */ });
-    this.proc.stderr!.on("data", (d) => { this.stderrTail = (this.stderrTail + d).slice(-4000); });
+    this.proc.stderr!.on("data", (d) => {
+      const joined = this.stderrTail + d;
+      // Checked before trimming, so a long rejected value cannot push the marker out of the kept tail.
+      if (/invalid --effort/i.test(joined)) this.effortRejected = true;
+      this.stderrTail = joined.slice(-4000);
+    });
     this.proc.stdout!.on("data", (d) => this.onData(String(d)));
 
     let permissionMode = "unknown";
@@ -53,7 +59,7 @@ export class AgyConnection implements Connection {
       new Promise<void>((r) => setTimeout(r, 20000)),
       this.exited.then(() => {
         // Classify on the whole captured output: a long rejected value can push the marker out of the shown tail.
-        const code = /invalid --effort/i.test(this.stderrTail) ? "invalid_effort" : "provider_error";
+        const code = this.effortRejected ? "invalid_effort" : "provider_error";
         throw new AdapterError(code, `agy exited during startup: ${this.stderrTail.slice(-300)}`);
       }),
     ]);

@@ -9,6 +9,8 @@
 // Extra directive: STOP:<reason> returns that stopReason.
 // Thinking level (U23): offers low / medium / high (default "auto"); any other requested value fails open() with invalid_effort.
 // Directive EFFORT:<level> changes the live level after the turn, as if the agent had switched it.
+// In-session changes (setEffort): "hang" never answers; "noreport" takes effect but gives no read-back (state unknown);
+// TURNWEFT_FAKE_EFFORT_DELAY_MS delays the answer; TURNWEFT_FAKE_LAUNCH_EFFORT=1 removes setEffort, like agy.
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -31,11 +33,17 @@ class FakeConnection implements Connection {
   private exitResolve!: (v: { code: number | null; signal: string | null }) => void;
   readonly exited = new Promise<{ code: number | null; signal: string | null }>((r) => { this.exitResolve = r; });
   private snapshot: Record<string, string> = {};
-  constructor(private cwd: string, private hooks: ConnectHooks = {}) {}
+  constructor(private cwd: string, private hooks: ConnectHooks = {}) {
+    if (process.env.TURNWEFT_FAKE_LAUNCH_EFFORT === "1") (this as { setEffort?: unknown }).setEffort = undefined;
+  }
 
   currentEffective() { return { ...this.snapshot }; }
   currentEffort() { return this.snapshot.effort; }
   async setEffort(value: string) {
+    const delay = Number(process.env.TURNWEFT_FAKE_EFFORT_DELAY_MS ?? 0);
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+    if (value === "hang") await new Promise(() => {});
+    if (value === "noreport") { this.snapshot.effort = value; throw new AdapterError("invalid_effort", "no read-back", true); }
     if (!FAKE_EFFORTS.includes(value)) throw new AdapterError("invalid_effort", `effort "${value}" is not offered; fake offers ${FAKE_EFFORTS.join(", ")}`);
     this.snapshot.effort = value;
   }

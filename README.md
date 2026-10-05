@@ -124,7 +124,7 @@ You can name a model if you want one ("use Droid with glm-5.3-flash"), and a thi
 | OpenCode | `low`, `high`, `max`, `default` (some models: `medium`) | ACP option `effort` |
 | agy | `low`, `medium`, `high`, `xhigh`, `max` | `--effort` at launch |
 
-You can also change the thinking level mid-conversation ("let Dim think harder from now on"). It applies from the next task, in the same agent session, so the agent keeps its context. Dim, Droid, Grok and OpenCode change it inside the running session, like their own CLIs do. agy only accepts the level at launch, so Turnweft restarts agy on the same conversation with the new level. The level is re-applied whenever a session is resumed. If the agent doesn't offer the level with its current model, that task fails with `invalid_effort` before anything is sent, the error lists the levels it does offer, and the session stays usable. Results report the level requested and the level the agent reports.
+You can also change the thinking level mid-conversation ("let Dim think harder from now on"). It applies to every task that starts after the change (a task already running keeps its level), in the same agent session, so the agent keeps its context. Dim, Droid, Grok and OpenCode change it inside the running session, like their own CLIs do. agy only accepts the level at launch, so Turnweft restarts agy on the same conversation with the new level. The level is re-applied whenever a session is resumed. If the agent doesn't offer the level with its current model, that task fails with `invalid_effort` before anything is sent, the error lists the levels it does offer, and the session stays usable. Results report the level requested and the level the agent reports.
 
 ## Permissions and safety
 

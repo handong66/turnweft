@@ -1008,3 +1008,78 @@ test("U23 review: empty model or effort is rejected instead of silently using th
     await assert.rejects(svc.createSession({ provider: "droid", cwd: repo(), host, ...bad }), (e: Error & { code?: string }) => e.code === "invalid_arguments");
   }
 });
+
+/** Run fn with env overrides for the workers it spawns (workers inherit env at spawn), then close the session. */
+async function withWorkerEnv<T>(env: Record<string, string>, fn: () => Promise<T>): Promise<T> {
+  const prev = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, env);
+  try { return await fn(); } finally {
+    for (const [k, v] of Object.entries(prev)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+}
+
+test("U23 review 3: an unknown level after a failed change closes the connection; the next turn reopens and sets it", async () => {
+  await withWorkerEnv({ TURNWEFT_IDLE_RELEASE_MS: "60000" }, async () => {
+    const s = await svc.createSession({ provider: "droid", cwd: repo(), host, effort: "low" });
+    const a = await waitDone((await submit(s.id, "REMEMBER:tok-r3", "analyze")).id);
+    await svc.updateSession({ sessionId: s.id, effort: "noreport", host });
+    const b = await waitDone((await submit(s.id, "SAY:x", "analyze")).id);
+    assert.equal(b.job.errorCode, "invalid_effort");
+    assert.equal(b.job.deliveredAt, undefined);
+    // The change took effect without a read-back. Going back to "low" must not trust the stale cache.
+    await svc.updateSession({ sessionId: s.id, effort: "low", host });
+    const c = await waitDone((await submit(s.id, "RECALL", "analyze")).id);
+    assert.equal(c.job.state, "succeeded");
+    assert.deepEqual(c.result!.effort, { requested: "low", effective: "low" });
+    assert.equal(readbackOf(c).effort, "low", "really low, not the level left behind");
+    assert.notEqual(readbackOf(c).conn, readbackOf(a).conn, "a fresh connection, opened on the same native session");
+    assert.match(c.result!.finalText, /tok-r3/);
+    await svc.closeSession(s.id);
+  });
+});
+
+test("U23 review 3: a change the agent never answers times out instead of hanging the turn", async () => {
+  await withWorkerEnv({ TURNWEFT_IDLE_RELEASE_MS: "60000", TURNWEFT_OPEN_TIMEOUT_MS: "1500" }, async () => {
+    const s = await svc.createSession({ provider: "droid", cwd: repo(), host });
+    await waitDone((await submit(s.id, "WRITE:first.txt")).id); // same intent as below: no tier reopen in between
+    await svc.updateSession({ sessionId: s.id, effort: "hang", host });
+    const b = await waitDone((await submit(s.id, "WRITE:never.txt")).id, 15000);
+    assert.equal(b.job.state, "failed");
+    assert.match(b.job.failureReason ?? "", /effort change/);
+    assert.equal(existsSync(join(s.cwd, "never.txt")), false);
+    // The project write lock was released: another session can write.
+    const other = await svc.createSession({ provider: "droid", cwd: s.cwd, host });
+    assert.equal((await waitDone((await submit(other.id, "WRITE:after.txt")).id)).job.state, "succeeded");
+    await svc.closeSession(s.id); await svc.closeSession(other.id);
+  });
+});
+
+test("U23 review 3: a cancel during a rejected change ends the turn as cancelled", async () => {
+  await withWorkerEnv({ TURNWEFT_IDLE_RELEASE_MS: "60000", TURNWEFT_FAKE_EFFORT_DELAY_MS: "1500" }, async () => {
+    const s = await svc.createSession({ provider: "droid", cwd: repo(), host });
+    await waitDone((await submit(s.id, "SAY:x", "analyze")).id);
+    await svc.updateSession({ sessionId: s.id, effort: "bogus", host });
+    const job = await submit(s.id, "SAY:y", "analyze");
+    const until = Date.now() + 10000;
+    while ((await svc.getJob({ jobId: job.id })).job.state !== "starting") { if (Date.now() > until) throw new Error("never started"); await new Promise((r) => setTimeout(r, 50)); }
+    await svc.cancelJob(job.id);
+    const v = await waitDone(job.id);
+    assert.equal(v.job.state, "cancelled");
+    await svc.closeSession(s.id);
+  });
+});
+
+test("U23 review 3: a launch-flag agent (agy) relaunches on the same native session with the new level", async () => {
+  await withWorkerEnv({ TURNWEFT_IDLE_RELEASE_MS: "60000", TURNWEFT_FAKE_LAUNCH_EFFORT: "1" }, async () => {
+    const s = await svc.createSession({ provider: "droid", cwd: repo(), host, effort: "low" });
+    const a = await waitDone((await submit(s.id, "REMEMBER:tok-agy", "analyze")).id);
+    const native = (await svc.getSession(s.id))!.nativeSessionId;
+    await svc.updateSession({ sessionId: s.id, effort: "high", host });
+    const b = await waitDone((await submit(s.id, "RECALL", "analyze")).id);
+    assert.deepEqual(b.result!.effort, { requested: "high", effective: "high" });
+    assert.notEqual(readbackOf(b).conn, readbackOf(a).conn, "relaunched");
+    assert.equal((await svc.getSession(s.id))!.nativeSessionId, native, "same native session");
+    assert.match(b.result!.finalText, /tok-agy/);
+    await svc.closeSession(s.id);
+  });
+});

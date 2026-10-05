@@ -9,7 +9,7 @@ if (effort !== undefined && !["low", "medium", "high", "xhigh", "max"].includes(
   process.stderr.write(`error: invalid model selection (--model "" --effort "${effort}"): invalid --effort "${effort}" (valid: low, medium, high, xhigh, max)\n`);
   process.exit(1);
 }
-const conversation = args.includes("--conversation") ? args[args.indexOf("--conversation") + 1] : "agy-conv-1";
+const conversation = args.includes("--conversation") ? args[args.indexOf("--conversation") + 1] : "agy-new-conv";
 process.stdout.write(`${JSON.stringify({ event: "init", conversation_id: conversation, init: { permission_mode: "request-review" } })}\n`);
 createInterface({ input: process.stdin }).on("line", () => {
   process.stdout.write(`${JSON.stringify({ event: "result", result: { status: "SUCCESS", response: `effort=${effort ?? "default"}` } })}\n`);

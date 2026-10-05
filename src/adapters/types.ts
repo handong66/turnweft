@@ -74,7 +74,9 @@ export interface Connection {
 export interface ConnectHooks { onSpawn?(pid: number): void }
 
 export class AdapterError extends Error {
-  constructor(public code: "session_not_found" | "auth_required" | "provider_error" | "capability_mismatch" | "not_installed" | "connection_lost" | "invalid_effort", message: string) {
+  constructor(public code: "session_not_found" | "auth_required" | "provider_error" | "capability_mismatch" | "not_installed" | "connection_lost" | "invalid_effort", message: string,
+    /** U23: the setting may or may not have taken effect (no reliable read-back); the connection must not be reused. */
+    public stateUnknown = false) {
     super(message);
   }
 }

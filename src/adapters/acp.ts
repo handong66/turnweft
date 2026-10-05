@@ -208,8 +208,8 @@ export class AcpConnection implements Connection {
     if (!id) throw new AdapterError("invalid_effort", "this agent exposes no thinking-level option");
     const model = this.effective["model"] ? ` with model ${this.effective["model"]}` : "";
     const offered = this.meta[id]?.values ?? [];
-    const reject = (why: string) => new AdapterError("invalid_effort",
-      `${why}; ${id} offers ${offered.length ? offered.join(", ") : "no listed values"}${model}. Create a new session with one of these values, or without effort.`);
+    const reject = (why: string, stateUnknown = false) => new AdapterError("invalid_effort",
+      `${why}; ${id} offers ${offered.length ? offered.join(", ") : "no listed values"}${model}. Update this session's effort to one of these values, then resubmit the turn with a new requestId.`, stateUnknown);
     if (offered.length && !offered.includes(value)) throw reject(`effort "${value}" is not offered`);
     // Always set it, even when the cache already shows the value: replayed history during load can leave the
     // cache stale, and only a fresh answer counts as the read-back.
@@ -217,10 +217,15 @@ export class AcpConnection implements Connection {
     let r: Json;
     try {
       r = await this.conn.setSessionConfigOption({ sessionId: this.sessionId, configId: id, value } as any) as Json;
-    } catch (e) { throw reject(`setting ${id} to "${value}" failed: ${errText(e)}`); }
-    // Droid answers {} and reports through config_option_update. Without a fresh answer the cache proves nothing.
+    } catch (e) {
+      // A lost transport is not a rejection of the value; an error answer from the agent is.
+      if (this.conn.signal.aborted || this.hasExited) throw new AdapterError("connection_lost", errText(e));
+      throw reject(`setting ${id} to "${value}" failed: ${errText(e)}`);
+    }
+    // Droid answers {} and reports through config_option_update. Without a fresh answer the cache proves nothing,
+    // and the set may still have taken effect: the level is unknown from here on.
     if (!this.absorb(r?.configOptions) && !(await this.waitForUpdate(seen, 3000))) {
-      throw reject(`the agent did not report its thinking level after setting ${id} to "${value}"`);
+      throw reject(`the agent did not report its thinking level after setting ${id} to "${value}"`, true);
     }
     // Droid answers an unknown value with {} and keeps another level (live run), so only the read-back counts.
     if (this.effective[id] !== value) throw reject(`requested effort "${value}" but the agent reports "${this.effective[id] ?? "nothing"}"`);
