@@ -6,6 +6,8 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-10-05
+
 ### Added
 - Sessions can set a thinking level: `effort` on `turnweft_session create`, `--effort` on `turnweft session create`. The value is the agent's own (Dim `thought_level`, Droid and Grok `reasoning_effort`, OpenCode `effort`, agy `--effort`) and is re-applied after the model whenever the session is opened or resumed. Before, every agent ran at its default; Dim implementation sessions were always `auto`.
 - Results and the `config.readback` event report `effort` (requested and effective). `turnweft_agents` lists `effortConfig` among each agent's capabilities.
@@ -14,6 +16,7 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 
 ### Changed
 - A thinking level the agent doesn't offer with the current model fails the turn with `invalid_effort` before the prompt is sent. The error lists the offered values. Turnweft never runs a turn at a different level: Droid silently ignores unknown values, and OpenCode resets the level when the model changes, so the level is set last, always sent even when it already looks right, and only a fresh answer from the agent counts as the read-back. If the level drifts between turns, Turnweft sets it again in the running session before the next turn. A rejected level fails only that turn; the session stays usable. When the agent doesn't confirm a change in time, the level counts as unknown: Turnweft closes that process and the next turn resumes the same session and sets the level again. The level is read in the same transaction that starts a turn, so an update applies to every turn that hasn't started yet and never to one already started.
+- The plugins now require runtime 0.1.0-alpha.3 or later, because their skills use `effort` and the `update` action (`npm install -g turnweft@latest`).
 - `turnweft_session create` and `turnweft session create` reject an empty `model` or `effort`. Before, an empty model was dropped silently and the agent used its default.
 
 ## [0.1.0-alpha.2] - 2026-10-05
@@ -49,7 +52,8 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 - Background jobs with idempotent `requestId`, in-order execution per session, one writer per project, and `in_doubt` instead of automatic resends.
 - English and Chinese text for people (dialogs, CLI), selectable with `"language"` in `~/.turnweft/config.json`.
 
-[Unreleased]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.2...HEAD
+[Unreleased]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.3...HEAD
+[0.1.0-alpha.3]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.0...v0.1.0-alpha.1
 [0.1.0-alpha.0]: https://github.com/handong66/turnweft/releases/tag/v0.1.0-alpha.0

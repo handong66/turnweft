@@ -1,6 +1,6 @@
 {
   "name": "turnweft",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Persistent external coding agent sessions and bounded background jobs for Codex.",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
