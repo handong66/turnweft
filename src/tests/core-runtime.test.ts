@@ -847,3 +847,12 @@ test("round 8: with no recorded dialog child, a dead helper's process group must
     st.close();
   }
 });
+
+test("text before and after a tool call is kept, separated by a blank line (live finding: Grok preamble glued to the answer)", async () => {
+  const s0 = await svc.createSession({ provider: "grok", cwd: repo(), host });
+  const v = await waitDone((await submit(s0.id, "SAY:I'll read README.md.\nTOOL:read README.md\nSAY:# tw-fixture", "analyze")).id);
+  assert.equal(v.job.state, "succeeded");
+  assert.equal(v.result?.finalText, "I'll read README.md.\n\n# tw-fixture");
+  const v2 = await waitDone((await submit(s0.id, "SAY:a\nSAY:b", "analyze")).id);
+  assert.equal(v2.result?.finalText, "ab", "consecutive chunks of one message are not split");
+});

@@ -267,18 +267,26 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
   let closeStarted = false;
 
   const flushText = () => { if (pending) { ev("text.delta", session.provider, { text: pending }); pending = ""; } };
+  // Text the agent writes before and after a tool call or permission request is separate prose: keep both,
+  // with a blank line between them instead of gluing "I'll read the file." to the answer.
+  let breakBeforeText = false;
   const onEvent = (e: AdapterEvent) => {
     lastActivity = Date.now();
     if (e.type === "text") {
-      if (text.length < MAX_TEXT) text += e.text; else truncated = true;
-      pending += e.text;
+      const sep = breakBeforeText && text ? (text.endsWith("\n\n") ? "" : text.endsWith("\n") ? "\n" : "\n\n") : "";
+      breakBeforeText = false;
+      const chunk = sep + e.text;
+      if (text.length < MAX_TEXT) text += chunk; else truncated = true;
+      pending += chunk;
       if (pending.length >= TEXT_EVENT_CHUNK) flushText();
     } else if (e.type === "tool") {
+      breakBeforeText = true;
       flushText();
       if (e.status === undefined || e.status === "pending" || e.status === "ACTIVE") ev("tool.started", session.provider, { kind: e.kind, title: e.title });
       else ev("tool.completed", session.provider, { kind: e.kind, title: e.title, status: e.status });
       if (e.title || e.kind) toolCalls.push({ kind: e.kind, title: e.title, status: e.status });
     } else if (e.type === "permission") {
+      breakBeforeText = true;
       flushText();
       answered.push({ kind: e.kind ?? "unknown", title: e.title, decision: e.decision });
       ev("permission.resolved", "turnweft", { kind: e.kind, title: e.title, decision: e.decision, by: "grant+policy" });

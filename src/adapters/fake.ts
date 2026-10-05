@@ -68,6 +68,8 @@ class FakeConnection implements Connection {
       const [cmd, arg = ""] = line.split(/:(.*)/s, 2) as [string, string?];
       if (cmd === "REMEMBER") { hist.memory.token = arg; onEvent({ type: "text", text: `remembered ${arg}\n` }); }
       else if (cmd === "RECALL") onEvent({ type: "text", text: hist.memory.token ?? "(nothing)" });
+      else if (cmd === "SAY") onEvent({ type: "text", text: arg }); // no trailing newline, like streamed agent text
+      else if (cmd === "TOOL") onEvent({ type: "tool", kind: "read", title: arg, status: "completed" });
       else if (cmd === "WRITE") {
         const decision = this.tier!.decide("edit", `write ${arg}`);
         onEvent({ type: "permission", kind: "edit", title: `write ${arg}`, decision });

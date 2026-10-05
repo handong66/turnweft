@@ -77,6 +77,22 @@ OpenCode 说明：`opencode-go/deepseek-v4.1-flash` 在测试时报 `Go usage li
   - 12:59:19.867：任务成功。
   - Codex 在同一轮内继续查询并报告 `succeeded`、档位 `normal+callback`，以及 `changed=["hello.txt"]`。
 
+## 3c. 公开发布版：五个 Agent × 两个宿主只读实测（2026-10-04）
+
+安装方式与普通用户相同：运行时为 npm `turnweft@0.1.0-alpha.0`，CC 和 Codex 的插件都从 GitHub `handong66/turnweft` 安装。每组都新开一个无界面宿主会话，只允许使用 Turnweft 工具：创建会话 → `turnweft_ask`（analyze）读 README 第一行 → 用 `turnweft_job` 查询到结束。Grok 的 analyze 档位比授权宽（测试机配置为 always-approve），所以在已确认过的测试目录中运行。
+
+| Agent | 模型 | 档位 | CC | Codex |
+| --- | --- | --- | --- | --- |
+| Dim | dimcode-api-oauth/deepseek-v4.1-flash | read-only | ✅ 36 s | ✅ 53 s |
+| Droid | glm-5.3-flash | normal+callback-readonly | ✅ 23 s | ✅ 45 s |
+| OpenCode | opencode/ling-3.1-flash-free | plan+callback-readonly | ✅ 45 s | ✅ 63 s |
+| agy | 默认 | request-review | ✅ 33 s | ✅ 57 s |
+| Grok | 默认 | user-config:always-approve | ✅ 31 s | ✅ 47 s |
+
+耗时是整个宿主会话的时间，包括宿主模型自身的推理。十组答案都正确。
+
+发现的问题：Grok 在调用工具前说的一句话（"I'll read README.md…"）和最终答案被直接首尾相连，中间没有换行。修复后，工具调用或权限请求前后的文字之间加一个空行，内容不删减。
+
 ## 4. 插件启动器
 
 - 运行时已安装（`npm link`，`/opt/homebrew/bin/turnweft` 为指向 `dist/cli/main.js` 的符号链接）：启动器找到运行时，并成功启动 `turnweft mcp`（上面第 2 节即经由它运行）。
