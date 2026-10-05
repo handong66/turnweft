@@ -91,7 +91,7 @@ OpenCode 说明：`opencode-go/deepseek-v4.1-flash` 在测试时报 `Go usage li
 
 耗时是整个宿主会话的时间，包括宿主模型自身的推理。十组答案都正确。
 
-发现的问题：Grok 在调用工具前说的一句话（"I'll read README.md…"）和最终答案被直接首尾相连，中间没有换行。修复后，工具调用或权限请求前后的文字之间加一个空行，内容不删减。
+发现的问题：Grok 在调用工具前说的一句话（"I'll read README.md…"）和最终答案被直接首尾相连，中间没有换行。修复后，工具调用或权限请求前后的文字之间加一个空行，内容不删减。该修复随 0.1.0-alpha.1 发布；从 npm 升级后在 CC 中复测 Grok，最终文本为“I'll read the first line of `README.md` …”加空行，再接“# tw-fixture”。
 
 ## 4. 插件启动器
 
