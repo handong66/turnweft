@@ -6,6 +6,8 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 
 ## [Unreleased]
 
+## [0.1.0-alpha.4] - 2026-10-08
+
 ### Fixed
 
 - Denied actions from callbacks and native permission stops are deduplicated by `kind:title`, counted, and capped at 50 entries with `deniedActionsTotal`. Failure reasons and localized warnings show at most five entries plus the omitted count.
@@ -22,6 +24,7 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 
 ### Changed
 
+- The Claude Code and Codex plugins now require runtime 0.1.0-alpha.4, because their Skills pass `nonInteractive`, which older runtimes reject.
 - Idempotent retries now enforce the session host binding and return `not_attached` for an unbound host; previously this check applied only to new submissions.
 - Both READMEs clarify that `providerEnv.PATH` replaces the inherited PATH and must be complete; executable and Node directory helpers still apply.
 
@@ -82,7 +85,8 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 - Background jobs with idempotent `requestId`, in-order execution per session, one writer per project, and `in_doubt` instead of automatic resends.
 - English and Chinese text for people (dialogs, CLI), selectable with `"language"` in `~/.turnweft/config.json`.
 
-[Unreleased]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.3...HEAD
+[Unreleased]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.4...HEAD
+[0.1.0-alpha.4]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.0...v0.1.0-alpha.1

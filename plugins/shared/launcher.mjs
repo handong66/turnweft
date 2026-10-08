@@ -12,7 +12,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 
-const MIN_RUNTIME = "0.1.0-alpha.3";
+const MIN_RUNTIME = "0.1.0-alpha.4";
 const MIN_NODE = "22.13.0";
 const HOME = homedir();
 
