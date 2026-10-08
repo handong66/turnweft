@@ -266,3 +266,21 @@ test("U19/U21: send never takes a bypass signal and shows the dialog when a conf
   assert.equal(await runCli(["send", "--session", "tws_session", "--intent", "implement", "--json"], w, waiting.io, { showDialog: (id) => { dialogs.push(id); return true; } }), 0);
   assert.deepEqual(dialogs, [proposal.proposalId], "the CLI path shows the same dialog as MCP");
 });
+
+test("U24: CLI rejects per-task parallelWrites and renders overlap warnings in human and JSON output", async () => {
+  const service = new FakeService();
+  const rejected = harness();
+  assert.equal(await runCli(["send", "--session", "tws_session", "--parallelWrites", "/project", "--json"], service, rejected.io), 1);
+  assert.deepEqual(service.calls, []);
+  const original = service.getJob.bind(service);
+  service.getJob = async input => {
+    const view = await original(input);
+    return { ...view, job: { ...view.job, concurrentWrites: ["twj_other"] } };
+  };
+  for (const json of [false, true]) {
+    const h = harness();
+    assert.equal(await runCli(["job", "result", "twj_job", ...(json ? ["--json"] : [])], service, h.io), 0);
+    if (json) assert.match(h.envelope().warnings[0], /twj_other.*overwrite/);
+    else assert.match(h.stderr(), /twj_other.*overwrite/);
+  }
+});

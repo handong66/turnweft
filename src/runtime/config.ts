@@ -1,10 +1,12 @@
 // User-level trusted configuration (§12): ~/.turnweft/config.json. Project files never widen this.
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 import type { ProviderId } from "../core/types.js";
 import { stateDir } from "./paths.js";
 
 export interface TurnweftConfig {
+  /** U24: user-only opt-in; exact real paths of project roots, never inherited by worktrees. */
+  parallelWrites?: string[];
   /** Absolute executable per provider; tools may not override this at call time (§11.1). */
   executables?: Partial<Record<ProviderId, string>>;
   /** Idle release after this many ms for sessions with verified L2 (U13). */
@@ -35,15 +37,30 @@ export function loadConfig(): TurnweftConfig & typeof DEFAULTS {
   const p = join(stateDir(), "config.json");
   let user: TurnweftConfig = {};
   if (existsSync(p)) {
-    try { user = JSON.parse(readFileSync(p, "utf8")); } catch { /* ignore malformed; doctor reports it */ }
+    try { user = JSON.parse(readFileSync(p, "utf8")) ?? {}; } catch { /* ignore malformed configuration */ }
   }
   const env = (k: string) => (process.env[k] ? Number(process.env[k]) : undefined);
   return {
     ...DEFAULTS,
     ...user,
+    parallelWrites: normalizeParallelWrites(user.parallelWrites),
     idleReleaseMs: env("TURNWEFT_IDLE_RELEASE_MS") ?? user.idleReleaseMs ?? DEFAULTS.idleReleaseMs,
     inactivityTimeoutMs: env("TURNWEFT_INACTIVITY_MS") ?? user.inactivityTimeoutMs ?? DEFAULTS.inactivityTimeoutMs,
     cancelGraceMs: env("TURNWEFT_CANCEL_GRACE_MS") ?? user.cancelGraceMs ?? DEFAULTS.cancelGraceMs,
     openTimeoutMs: env("TURNWEFT_OPEN_TIMEOUT_MS") ?? user.openTimeoutMs ?? DEFAULTS.openTimeoutMs,
   };
+}
+
+/** Invalid, missing and non-directory entries cannot grant concurrent write access. */
+function normalizeParallelWrites(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const roots = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== "string" || !isAbsolute(entry)) continue;
+    try {
+      const root = realpathSync(entry);
+      if (statSync(root).isDirectory()) roots.add(root);
+    } catch { /* fail closed */ }
+  }
+  return [...roots];
 }

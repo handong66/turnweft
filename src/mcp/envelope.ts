@@ -1,4 +1,12 @@
 import type { Envelope } from "../core/types.js";
+import type { JobView } from "../core/service.js";
+import { text } from "../core/i18n.js";
+
+/** Shared by MCP and CLI, including status-only and recovered jobs without a final result. */
+export function jobWarnings(view: JobView): string[] {
+  const jobs = view.result?.concurrentWrites ?? view.job.concurrentWrites;
+  return jobs?.length ? [text("concurrentWrites", { jobs: jobs.join(", ") })] : [];
+}
 
 export function success<T>(data: T, warnings: string[] = []): Envelope<T> {
   return { ok: true, data, error: null, warnings };

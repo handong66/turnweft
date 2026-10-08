@@ -45,6 +45,7 @@ export const currentLanguage = createLanguageResolver();
 
 const messages = {
   zh: {
+    concurrentWrites: "同一目录有其他写任务同时运行：{jobs}；改动可能互相覆盖，git 提交可能包含其他 Agent 的改动",
     usage: "Turnweft\n  mcp                         启动 stdio MCP 服务\n  doctor | agents list        探测目标，不提交模型任务\n  session create --agent ID --cwd PATH [--name LABEL] [--model MODEL] [--effort LEVEL]\n  session list [--cwd PATH] [--agent ID] [--include-closed]\n  session get|attach ID\n  session update ID --effort LEVEL\n  session close ID [--policy reject_if_busy|cancel_running]\n  send --session ID [--intent analyze|implement] [--prompt-file FILE] [--request-id ID]\n                              未提供文件时从标准输入读取；默认意图为 analyze\n  job status|wait|result ID [--wait-ms MS] [--after-seq N] [--include-result]\n                           [--result-offset N] [--result-limit N]\n                              最多等待 25000 ms；其他查询立即返回\n  cancel ID\n  policy list [--cwd PATH] [--agent ID]\n  policy revoke ID\n  policy grant PROPOSAL_ID     需要标准输入、输出为终端，并手动输入 yes\n  所有命令接受 --json；mcp 标准输出始终为 MCP 协议流。\n",
     cancelled: "输入已关闭或确认已取消；未授予权限",
     declined: "未授予权限；任务继续等待",
@@ -79,6 +80,7 @@ const messages = {
     grantPrompt: "输入 yes 授予此项权限，或 no 拒绝："
   },
   en: {
+    concurrentWrites: "Other write jobs ran concurrently in the same directory: {jobs}; changes may overwrite each other, and git commits may include another agent's changes.",
     usage: "Turnweft\n  mcp                         Start the stdio MCP server\n  doctor | agents list        Probe targets without submitting a model task\n  session create --agent ID --cwd PATH [--name LABEL] [--model MODEL] [--effort LEVEL]\n  session list [--cwd PATH] [--agent ID] [--include-closed]\n  session get|attach ID\n  session update ID --effort LEVEL\n  session close ID [--policy reject_if_busy|cancel_running]\n  send --session ID [--intent analyze|implement] [--prompt-file FILE] [--request-id ID]\n                              Otherwise read the prompt from stdin; intent defaults to analyze\n  job status|wait|result ID [--wait-ms MS] [--after-seq N] [--include-result]\n                           [--result-offset N] [--result-limit N]\n                              Waits are capped at 25000 ms; other queries return immediately\n  cancel ID\n  policy list [--cwd PATH] [--agent ID]\n  policy revoke ID\n  policy grant PROPOSAL_ID     Requires stdin and stdout TTY and manual yes\n  All commands accept --json; mcp stdout remains the MCP protocol stream.\n",
     cancelled: "Input closed or confirmation was cancelled; policy was not granted",
     declined: "Policy was not granted; jobs keep waiting",

@@ -13,7 +13,7 @@ import type { TurnweftService } from "../core/service.js";
 import { PROVIDERS } from "../core/types.js";
 import type { Envelope, HostBinding, Intent, ProviderId } from "../core/types.js";
 import { boundedWait, confirmationRequired, startMcpServer } from "../mcp/server.js";
-import { failure, serviceFailure, success } from "../mcp/envelope.js";
+import { failure, jobWarnings, serviceFailure, success } from "../mcp/envelope.js";
 import { macosConfirm, spawnDialogHelper, type NativeConfirm } from "../mcp/native-dialog.js";
 import { ownerToken, stopAndConfirm } from "../runtime/proc.js";
 import { createService } from "../runtime/factory.js";
@@ -231,7 +231,10 @@ export async function runCli(
           : { ...failure(outcome.code, outcome.message), error: { code: outcome.code, message: outcome.message, details: { requestId } } };
         break;
       }
-      case "job": envelope = success(await service.getJob({ jobId: id!, waitMs: boundedWait(number(values["wait-ms"], "--wait-ms") ?? (action === "wait" ? 25_000 : 0)), afterSeq: number(values["after-seq"], "--after-seq"), includeResult: values["include-result"] ?? action === "result", resultOffset: number(values["result-offset"], "--result-offset"), resultLimit: number(values["result-limit"], "--result-limit", 1) })); break;
+      case "job": {
+        const view = await service.getJob({ jobId: id!, waitMs: boundedWait(number(values["wait-ms"], "--wait-ms") ?? (action === "wait" ? 25_000 : 0)), afterSeq: number(values["after-seq"], "--after-seq"), includeResult: values["include-result"] ?? action === "result", resultOffset: number(values["result-offset"], "--result-offset"), resultLimit: number(values["result-limit"], "--result-limit", 1) });
+        envelope = success(view, jobWarnings(view)); break;
+      }
       case "cancel": envelope = success(await service.cancelJob(action!)); break;
       case "policy":
         if (action === "list") envelope = success(await service.listPolicies({ canonicalRoot: values.cwd, provider: agent() }));

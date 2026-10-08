@@ -1100,3 +1100,70 @@ test("U23 review 4: claiming a turn reads the session's level in the same transa
   st.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("U24: opted-in workers overlap, report both peers, retain same-session FIFO, and reads bypass writers", async () => {
+  const d = repo();
+  const config = join(HOME, "config.json");
+  const previousTimeout = process.env.TURNWEFT_INACTIVITY_MS;
+  process.env.TURNWEFT_INACTIVITY_MS = "30000";
+  writeFileSync(config, JSON.stringify({ parallelWrites: [d] }));
+  try {
+    const a = await svc.createSession({ provider: "dim", cwd: d, host });
+    const b = await svc.createSession({ provider: "droid", cwd: d, host });
+    const reader = await svc.createSession({ provider: "grok", cwd: d, host });
+    const ja = await submit(a.id, "SLEEP:20000");
+    await waitFor(async () => (await svc.getJob({ jobId: ja.id })).job.state === "running");
+    const jb = await submit(b.id, "SLEEP:20000");
+    await waitFor(async () => (await svc.getJob({ jobId: jb.id })).job.state === "running");
+    assert.equal((await svc.getJob({ jobId: ja.id })).job.state, "running");
+    const later = await submit(a.id, "WRITE:fifo.txt");
+    assert.equal((await svc.getJob({ jobId: later.id })).job.state, "queued");
+    const read = await waitDone((await submit(reader.id, "hello", "analyze")).id);
+    assert.equal(read.job.state, "succeeded");
+    assert.equal(read.result?.concurrentWrites, undefined);
+    await svc.cancelJob(jb.id);
+    const vb = await waitDone(jb.id);
+    await svc.cancelJob(ja.id);
+    const va = await waitDone(ja.id);
+    assert.deepEqual(va.result?.concurrentWrites, [jb.id]);
+    assert.deepEqual(vb.result?.concurrentWrites, [ja.id]);
+    const tail = await waitDone(later.id);
+    assert.equal(tail.job.state, "succeeded");
+    assert.ok(Date.parse(tail.job.startedAt!) >= Date.parse(va.job.finishedAt!));
+    assert.equal(tail.result?.concurrentWrites, undefined);
+  } finally {
+    rmSync(config, { force: true });
+    process.env.TURNWEFT_INACTIVITY_MS = previousTimeout;
+  }
+});
+
+for (const initialParallel of [false, true]) test(`U24: running ${initialParallel ? "shared" : "exclusive"} holder blocks opposite mode after user config changes`, async () => {
+  const d = repo();
+  const config = join(HOME, "config.json");
+  const configure = (parallel: boolean) => writeFileSync(config, JSON.stringify({ parallelWrites: parallel ? [d] : [] }));
+  const previousTimeout = process.env.TURNWEFT_INACTIVITY_MS;
+  process.env.TURNWEFT_INACTIVITY_MS = "30000";
+  configure(initialParallel);
+  try {
+    const a = await svc.createSession({ provider: "dim", cwd: d, host });
+    const b = await svc.createSession({ provider: "droid", cwd: d, host });
+    // Warm B first: it must observe the changed config without restarting its worker.
+    await waitDone((await submit(b.id, "hello", "analyze")).id);
+    const ja = await submit(a.id, "SLEEP:20000");
+    await waitFor(async () => (await svc.getJob({ jobId: ja.id })).job.state === "running");
+    configure(!initialParallel);
+    const jb = await submit(b.id, "WRITE:after-holder.txt");
+    await waitFor(async () => (await svc.getJob({ jobId: jb.id })).events.some(e => e.type === "diagnostic" && String(e.payload.message).startsWith("queued:")));
+    assert.equal((await svc.getJob({ jobId: jb.id })).job.state, "queued");
+    await svc.cancelJob(ja.id);
+    const va = await waitDone(ja.id);
+    const vb = await waitDone(jb.id);
+    assert.equal(vb.job.state, "succeeded");
+    assert.ok(Date.parse(vb.job.startedAt!) >= Date.parse(va.job.finishedAt!));
+    assert.equal(va.result?.concurrentWrites, undefined);
+    assert.equal(vb.result?.concurrentWrites, undefined);
+  } finally {
+    rmSync(config, { force: true });
+    process.env.TURNWEFT_INACTIVITY_MS = previousTimeout;
+  }
+});

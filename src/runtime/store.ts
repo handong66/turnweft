@@ -10,7 +10,7 @@ import type {
 import { dbPath } from "./paths.js";
 import { now } from "./ids.js";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const TERMINAL = new Set<JobState>(["succeeded", "failed", "cancelled", "timed_out", "in_doubt"]);
 
 const DDL = `
@@ -67,6 +67,7 @@ function rowToJob(r: Row): Job {
     errorCode: s(r.error_code), grantRevision: n(r.grant_revision), policyId: s(r.policy_id), proposalId: s(r.proposal_id), hostBypass: s(r.host_bypass), hostBypassDigest: s(r.host_bypass_digest),
     ownerGeneration: n(r.owner_generation), acceptedAt: String(r.accepted_at), deliveredAt: s(r.delivered_at),
     startedAt: s(r.started_at), finishedAt: s(r.finished_at),
+    concurrentWrites: j<string[]>(r.concurrent_writes),
   };
 }
 
@@ -92,10 +93,10 @@ export class Store {
     // opening an old file at the same time cannot both ALTER (review round 2, finding 10).
     this.tx(() => {
       this.db.exec(DDL);
-      this.migrate();
       const v = this.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as Row | undefined;
-      if (!v) this.db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?)").run(String(SCHEMA_VERSION));
-      else if (Number(v.value) > SCHEMA_VERSION) throw new Error(`state schema ${v.value} is newer than this Turnweft (${SCHEMA_VERSION})`);
+      if (v && Number(v.value) > SCHEMA_VERSION) throw new Error(`state schema ${v.value} is newer than this Turnweft (${SCHEMA_VERSION})`);
+      this.migrate();
+      this.db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(String(SCHEMA_VERSION));
     });
   }
 
@@ -128,9 +129,22 @@ export class Store {
     }
   }
 
-  /** Additive column migrations for state files created by earlier alpha builds. */
+  /** Transactional migrations for state files created by earlier alpha builds. */
   private migrate() {
     const cols = (t: string) => new Set((this.db.prepare(`PRAGMA table_info(${t})`).all() as Row[]).map((r) => String(r.name)));
+    // U24: preserve every legacy holder as exclusive, including frozen/dead-owner evidence.
+    // The key changes, so bump the schema version: older binaries must not acquire these locks.
+    if (!cols("project_locks").has("mode")) {
+      this.db.exec(`ALTER TABLE project_locks RENAME TO project_locks_v1;
+        CREATE TABLE project_locks (
+          canonical_root TEXT NOT NULL, job_id TEXT NOT NULL, owner_pid INTEGER NOT NULL,
+          owner_token TEXT NOT NULL, acquired_at TEXT NOT NULL,
+          mode TEXT NOT NULL DEFAULT 'exclusive' CHECK(mode IN ('shared','exclusive')),
+          PRIMARY KEY (canonical_root, job_id));
+        INSERT INTO project_locks SELECT canonical_root, job_id, owner_pid, owner_token, acquired_at, 'exclusive' FROM project_locks_v1;
+        DROP TABLE project_locks_v1;`);
+    }
+    if (!cols("jobs").has("concurrent_writes")) this.db.exec("ALTER TABLE jobs ADD COLUMN concurrent_writes TEXT");
     const lease = cols("leases");
     if (!lease.has("native_pid")) this.db.exec("ALTER TABLE leases ADD COLUMN native_pid INTEGER");
     if (!lease.has("native_token")) this.db.exec("ALTER TABLE leases ADD COLUMN native_token TEXT");
@@ -318,6 +332,7 @@ export class Store {
       if (!cur || cur.ownerGeneration !== generation || !from.includes(cur.state)) return false;
       if (!this.leaseIs(cur.sessionId, generation)) return false;
       this.updateJob(id, { ...extra, state: to });
+      if (to === "running" && cur.intent === "implement") this.recordConcurrentWrites(id);
       return true;
     });
   }
@@ -329,7 +344,7 @@ export class Store {
       const cur = this.getJob(id);
       if (!cur || cur.ownerGeneration !== generation || TERMINAL.has(cur.state)) return false;
       if (!this.leaseIs(cur.sessionId, generation)) return false;
-      if (result) this.db.prepare("UPDATE jobs SET result = ? WHERE id = ?").run(JSON.stringify(result), id);
+      if (result) this.db.prepare("UPDATE jobs SET result = ? WHERE id = ?").run(JSON.stringify({ ...result, concurrentWrites: cur.concurrentWrites }), id);
       this.updateJob(id, { ...extra, state, finishedAt: now() });
       const r = this.db.prepare("SELECT next_seq FROM jobs WHERE id = ?").get(id) as Row;
       const seq = Number(r.next_seq);
@@ -645,10 +660,31 @@ export class Store {
     this.db.prepare(sql).run(sessionId, token);
   }
 
-  /** Holder of a project's write lock, for recovery of a session whose worker died while holding it. */
+  /** All holders must be considered when waking dead-owner recovery. */
+  projectLockHolders(root: string): { jobId: string; sessionId?: string; ownerPid: number; ownerToken: string; mode: "shared" | "exclusive" }[] {
+    const rows = this.db.prepare("SELECT l.*, j.session_id FROM project_locks l LEFT JOIN jobs j ON j.id = l.job_id WHERE l.canonical_root = ? ORDER BY l.job_id").all(root) as Row[];
+    return rows.map(r => ({ jobId: String(r.job_id), sessionId: s(r.session_id), ownerPid: Number(r.owner_pid), ownerToken: String(r.owner_token), mode: r.mode as "shared" | "exclusive" }));
+  }
+
+  /** Compatibility helper for callers inspecting a single exclusive holder. */
   projectLockHolder(root: string): { jobId: string; sessionId?: string; ownerPid: number; ownerToken: string } | undefined {
-    const r = this.db.prepare("SELECT l.job_id, l.owner_pid, l.owner_token, j.session_id FROM project_locks l LEFT JOIN jobs j ON j.id = l.job_id WHERE l.canonical_root = ?").get(root) as Row | undefined;
-    return r ? { jobId: String(r.job_id), sessionId: s(r.session_id), ownerPid: Number(r.owner_pid), ownerToken: String(r.owner_token) } : undefined;
+    return this.projectLockHolders(root)[0];
+  }
+
+  /** Called inside the delivery transition transaction, recording both sides before either can finish. */
+  private recordConcurrentWrites(jobId: string) {
+    const peers = this.db.prepare(`SELECT j.id FROM project_locks l JOIN jobs j ON j.id = l.job_id
+      WHERE l.canonical_root = (SELECT canonical_root FROM project_locks WHERE job_id = ?)
+      AND j.id != ? AND j.intent = 'implement' AND j.delivered_at IS NOT NULL
+      AND j.state IN ('running','waiting_permission','cancel_requested')`).all(jobId, jobId) as Row[];
+    for (const peer of peers) {
+      const other = String(peer.id);
+      for (const [id, overlap] of [[jobId, other], [other, jobId]] as const) {
+        const ids = new Set(this.getJob(id)?.concurrentWrites ?? []);
+        ids.add(overlap);
+        this.db.prepare("UPDATE jobs SET concurrent_writes = ? WHERE id = ?").run(JSON.stringify([...ids].sort()), id);
+      }
+    }
   }
 
   /**
@@ -656,18 +692,22 @@ export class Store {
    * must also be proven stopped (round 2, finding 3). `nativeStopped` checks the process group.
    */
   acquireProjectLock(root: string, jobId: string, pid: number, token: string, isOwnerGone: (pid: number, token: string) => boolean,
-    nativeStopped: (pid: number, token: string) => boolean = isOwnerGone): boolean {
+    nativeStopped: (pid: number, token: string) => boolean = isOwnerGone, mode: "shared" | "exclusive" = "exclusive"): boolean {
     return this.tx(() => {
-      const r = this.db.prepare("SELECT * FROM project_locks WHERE canonical_root = ?").get(root) as Row | undefined;
-      if (r && String(r.job_id) !== jobId) {
-        if (!isOwnerGone(Number(r.owner_pid), String(r.owner_token))) return false;
-        const holder = this.getJob(String(r.job_id));
+      for (const r of this.projectLockHolders(root)) {
+        if (r.jobId === jobId && r.ownerPid === pid && r.ownerToken === token) return r.mode === mode;
+        const holder = this.getJob(r.jobId);
         const lease = holder ? this.getLease(holder.sessionId) : undefined;
-        if (lease?.nativePid && lease.nativeToken && !nativeStopped(lease.nativePid, lease.nativeToken)) return false;
+        if (isOwnerGone(r.ownerPid, r.ownerToken)) {
+          if (lease?.nativePid && lease.nativeToken && !nativeStopped(lease.nativePid, lease.nativeToken)) return false;
+          this.releaseProjectLock(root, r.jobId);
+          continue;
+        }
+        // A terminal job retaining its hold may be frozen with a still-running provider.
+        if (r.jobId === jobId || mode === "exclusive" || r.mode === "exclusive" || !holder || TERMINAL.has(holder.state)) return false;
       }
-      this.db.prepare(`INSERT INTO project_locks (canonical_root, job_id, owner_pid, owner_token, acquired_at) VALUES (?,?,?,?,?)
-        ON CONFLICT(canonical_root) DO UPDATE SET job_id = excluded.job_id, owner_pid = excluded.owner_pid,
-        owner_token = excluded.owner_token, acquired_at = excluded.acquired_at`).run(root, jobId, pid, token, now());
+      this.db.prepare(`INSERT INTO project_locks (canonical_root, job_id, owner_pid, owner_token, acquired_at, mode) VALUES (?,?,?,?,?,?)`)
+        .run(root, jobId, pid, token, now(), mode);
       return true;
     });
   }

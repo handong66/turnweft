@@ -76,6 +76,7 @@ AgentBridge 已有多个同领域项目；AgentRelay / `agent-relay` 也已有�
 | U21 | **宿主处于 bypass 模式时，由该模式授权，不再确认**：从开了 bypass 的宿主对话提交的任务直接放行，不生成提案、不弹窗；只对这一个任务有效，不保存为长期确认，同一项目在非 bypass 对话中照常确认。只认宿主为**这一次调用**给出的信号：Claude Code 由插件自带的 PreToolUse 钩子在每次 `turnweft_ask` / `turnweft_delegate` 调用前取得 Claude Code 交给它的当前 `permission_mode`，按会话 ID 和本次调用的摘要（工具名 + 全部任务参数：Turnweft 会话、任务内容、requestId）记下；钩子写入前先删除旧记录。运行时只认 15 秒内、全部对得上的记录，读后即删，参数无效的调用也会消耗记录。这依赖钩子正常运行：钩子没运行时没有新记录，就照常弹窗；只有 `bypassPermissions` 算数，`auto` 等其他模式照常弹窗。Codex 读本次调用附带的 `x-codex-turn-metadata.sandbox_mode`，只有 `danger-full-access`（完全访问）算数。命令行 `turnweft send` 永远不自动放行（它的环境变量谁都能改），需要确认时弹出 macOS 对话框。bypass 授权与长期确认相互独立：撤销确认不影响已放行的任务；授权绑定提交时的权限指纹，排队期间档位或版本变化则要求重新授权。读不到或不确定时按非 bypass 处理。结果写明实际档位和 `authorizedBy`。第 11 轮评审后改为钩子方案：最初从对话记录推断模式，可被模型写进工具参数的文字和命令行环境变量伪造。第 12 轮评审后，记录从只绑定 requestId 改为绑定整次调用，并缩短有效期。（2026-10-05） | §7.4 |
 | U22 | **文档与变更记录门禁**：每次影响用户的改动都要同步更新相关文档，并在 `CHANGELOG.md` 的 Unreleased 下写一条记录。提交门禁（`.githooks/pre-commit` 和 `pre-merge-commit` → `scripts/docs-gate.mjs`；`npm install` 时自动启用，已设置 `core.hooksPath` 时不覆盖，CI 中跳过）会检查两件事：改了 `src/`（测试除外，改名的两端都算）、`plugins/`、`package.json` 或插件市场文件，却没在 `CHANGELOG.md` 里新增记录（删除或只改格式不算）的提交会被拦下，并列出需要核对的文档；同时扫描暂存内容（即将提交的版本）有没有隐私信息。`npm version` 会把 Unreleased 改为新版本一节；`npm publish` 前 `prepublishOnly` 检查当前版本有没有对应的记录，并扫描最终 npm 包。紧急情况可用 `git commit --no-verify` 绕过，不作为常规做法。（2026-10-05） | §15 |
 | U23 | **思考强度可显式指定，与模型同等对待**：`turnweft_session create` / `session create` 新增可选的 `effort`，取值直接用各 Agent 自己的值（Dim `thought_level`、Droid / Grok `reasoning_effort`、OpenCode `effort`、agy `--effort`），Turnweft 不做统一换算，也不设产品默认值（与 U12 一致）。它随会话保存，每次打开或恢复会话都在模型之后重新设置。ACP 目标按 `category: "thought_level"` 找配置项（找不到时退回已知 id），先按当前模型的可选值校验，再设置（即使缓存显示已是该值也照发，避免 load 回放让缓存过期），只认 Agent 这次的新回报作为读回（返回的完整配置列表，或之后的 `config_option_update`；空列表也算完整列表，等不到回报算失败）；不提供、设置失败或读回不一致都以 `invalid_effort` 让本轮失败，prompt 不发出，绝不在别的强度下运行，会话本身不受影响。**同一会话内可调整**：`turnweft_session update` / `session update ID --effort`，从下一轮起生效，上下文保留；ACP 目标在运行中的会话里直接 `set_config_option`（和各家 CLI 里改强度一样，不重启进程）；轮次之间强度漂移时也这样原地改回。强度与本轮领取（queued → starting）在同一事务中读取，update 对尚未开始的轮次都生效；会话内设置与 open 用同一超时；只有"明确拒绝"（不在可选值内、Agent 返回错误、读回明确是别的值）才保留连接，超时、连接断开或等不到读回都视为强度未知，关闭该进程，下一轮恢复同一会话并重新设置。agy 只能在启动时用 `--effort`，改强度时带新参数重启并用 `--conversation` 接回同一对话；agy 读不回，结果里的 effective 就是启动参数。结果和 `config.readback` 事件写明 requested 与 effective（取自连接的实时读回）。空字符串的 model / effort 直接拒绝。起因：经 Turnweft 派出的 Dim 实现席一直是 auto，Dim 也没有可改的持久默认值（M0 §2.1）。（2026-10-05） | §12 |
+| U24 | **默认串行，用户可显式开启同目录并行写入**：同一 canonical root 内的 implement 默认串行；并行写同一项目时推荐每个 Agent 使用独立 git worktree（各自是独立根目录）。用户可自行在 `~/.turnweft/config.json` 的 `parallelWrites` 绝对目录数组中精确指定根目录；路径经 realpath 规范化，不递归匹配其他 canonical root（含嵌套 worktree），无效条目忽略。Agent 不得代改该配置，MCP 参数、任务 CLI 标志、项目文件均不能开启。启用时使用共享持有者，默认使用独占持有者；独占等待所有持有者，共享等待独占，配置变更不改变已取得的锁。死亡 owner 须确认原生进程已停止才能回收；冻结持有者继续阻塞。实际重叠执行的双方都在 `concurrentWrites` 中记录对方 job ID，并经中英 i18n 在 MCP／CLI 警告覆盖改动及混入其他 Agent 提交的风险。analyze 不取写锁；同会话 FIFO 不变。（2026-10-07） | §7.5 |
 
 模型 ID 的核对范围：本机 Droid 0.233.0 的 `--list-tools` 校验接受 `glm-5.3-flash`（内置模型）；Dim 0.5.16 的 `dim model list` 列出了 `dimcode-api-oauth/deepseek-v4.1-flash`。两者此后都已用于真实任务测试（见 `docs/e2e/E2E_RESULTS.md`）。
 
@@ -397,7 +398,13 @@ ACP permission request 由 adapter 映射到现有 grant，能够明确匹配的
 
 传入的 root / attachment 应规范化并处理逃逸 symlink；但输入路径校验不能限制 Agent 自己生成的任意 shell 命令。若 provider 不支持路径强约束，结果中必须说明执行约束的强度，不宣称 OS sandbox。
 
-同一原项目上的多个委派写任务，首版建议按项目序列化；同一 session 始终 FIFO。只读任务可按能力并行；显式指定互不重叠写范围时可后续扩展并发。不同项目并行，不做全局单队列。
+同一 canonical root 上的 implement 默认串行；推荐每个写入 Agent 使用独立 git worktree，各 worktree 的 canonical root 不同，因此可并行。审查使用 `turnweft_ask`（analyze），不等待项目写锁；同一 session 始终 FIFO。不同项目并行，不做全局单队列。
+
+U24：只有用户配置 `~/.turnweft/config.json` 的 `parallelWrites?: string[]` 可开启同目录并行写入，Agent 不得代改。绝对目录经 realpath 规范化后精确匹配 session canonical root；父目录条目不覆盖其他 worktree，相对路径、非字符串、不存在或非目录条目忽略。MCP、任务 CLI 标志与项目文件不能配置。每次取锁前重新读取：列入时取 shared，否则取 exclusive；独占等所有持有者，共享等独占。已取得的锁模式保持到释放。
+
+SQLite schema v2 在事务内把旧 `project_locks` 单根键迁移为 `(canonical_root, job_id)`，旧持有者全部保留为 exclusive；新增 mode 与 jobs.concurrent_writes，不改变其他历史记录。旧版本重新打开 v2 状态库会拒绝运行。每个持有者沿用 owner-gone 与 native-stopped 双重回收条件；终态仍持锁的冻结任务阻止新写任务。释放只移除对应 job 的持有记录，恢复会唤醒所有死亡持有者的 session。
+
+进入 running 的事务同时记录同根已交付且仍活动的 implement 任务，双向持久化去重 job ID；只取得锁但尚未交付的任务不算重叠。结果与 job 状态提供可选 `concurrentWrites`（无重叠时省略），恢复到 in_doubt 时也保留 job 上的记录。MCP 和 CLI 通过 i18n 给出风险警告：改动可能互相覆盖，git 提交可能包含其他 Agent 的改动。
 
 项目写锁只能约束通过 Turnweft 发出的任务，不能锁住编辑器、用户或宿主自身。因此主 Agent 的协作 Skill 必须要求：委派写入期间不要同时改同一范围；变更观测区分既有 dirty files 和本轮差异，发现外部变化不能自动 reset 或归咎子 Agent。
 

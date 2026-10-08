@@ -41,3 +41,10 @@ Some agents can only work in a tier that is broader than the current grant (for 
 - `in_doubt` means the turn may have run but Turnweft could not confirm it finished; inspect the files before deciding whether to retry. Never resend automatically.
 - `failed` with `permission_blocked`, `capability_mismatch`, `auth_required` or `session_not_found`: report the reason to the user; do not switch to another agent or start a new session silently.
 - `failed` with `invalid_effort`: the agent does not offer that thinking level with this model; nothing was sent. The reason lists the values it offers. Ask the user which one to use, then `update` the same session with it and resubmit the turn with a new `requestId`.
+
+## Parallel writers and reviews
+
+- To run several writing agents in parallel on one project, give each its own git worktree and create each Turnweft session in that directory. Turnweft locks per canonical directory, so different worktrees do not block each other.
+- Implement jobs in the same directory queue by default. Use `turnweft_ask` (`analyze`) for reviews: it never queues behind the project write lock. Same-session turns always remain FIFO.
+- The user can opt an exact directory into concurrent writes with `"parallelWrites": ["/absolute/project/directory"]` in `~/.turnweft/config.json`. Only the user may change this setting; **the agent must never edit that config itself**. There is no tool argument, task flag or project-file override.
+- Risk: concurrent changes may overwrite each other, and git commits may include other agents' changes. Surface the `concurrentWrites` peer job IDs and warnings when present.

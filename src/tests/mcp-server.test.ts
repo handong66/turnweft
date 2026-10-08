@@ -377,3 +377,27 @@ test("U21: the MCP host layer passes the host's bypass signal, never a tool argu
   await call(plain.client, "turnweft_delegate", { sessionId: "tws_session", prompt: "do it", requestId: "r-plain" });
   assert.equal(plain.service.submissions.at(-1)!.hostBypass, undefined);
 });
+
+test("U24: parallelWrites cannot be set by MCP arguments", async t => {
+  const { client, service } = await setup(t);
+  for (const [tool, args] of [
+    ["turnweft_delegate", { sessionId: "tws_session", prompt: "test", requestId: "req" }],
+    ["turnweft_ask", { sessionId: "tws_session", prompt: "test", requestId: "req" }],
+    ["turnweft_session", { action: "create", provider: "dim", cwd: "/project" }],
+  ] as const) {
+    assert.equal((await call(client, tool, { ...args, parallelWrites: ["/project"] })).error?.code, "invalid_arguments");
+  }
+  assert.deepEqual(service.calls, []);
+});
+
+test("U24: MCP job results surface concurrent write warnings", async t => {
+  const { client, service } = await setup(t);
+  const original = service.getJob.bind(service);
+  service.getJob = async input => {
+    const view = await original(input);
+    return { ...view, job: { ...view.job, concurrentWrites: ["twj_other"] } };
+  };
+  const result = await call(client, "turnweft_job", { jobId: "twj_job", includeResult: true });
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0]!, /twj_other/);
+});

@@ -146,3 +146,8 @@ test("native dialog passes localized buttons and expiry to osascript", { skip: p
     if (oldDisabled === undefined) delete process.env.TURNWEFT_NO_NATIVE_DIALOG; else process.env.TURNWEFT_NO_NATIVE_DIALOG = oldDisabled;
   }
 });
+
+test("U24: concurrent write warning is localized with peer IDs", () => {
+  assert.equal(text("concurrentWrites", { jobs: "twj_a, twj_b" }, "zh"), "同一目录有其他写任务同时运行：twj_a, twj_b；改动可能互相覆盖，git 提交可能包含其他 Agent 的改动");
+  assert.equal(text("concurrentWrites", { jobs: "twj_a, twj_b" }, "en"), "Other write jobs ran concurrently in the same directory: twj_a, twj_b; changes may overwrite each other, and git commits may include another agent's changes.");
+});

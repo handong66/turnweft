@@ -191,6 +191,12 @@ Agent 的模式超出你的授权时，任务先记为 `waiting_confirmation`（
 
 确认结果按 Agent × 项目 × 任务类型保存。用 `turnweft policy list` 查看，用 `turnweft policy revoke <id>` 撤销。
 
+## 并行写任务
+
+同一 canonical root（Git 项目或 worktree 的根目录）内，`implement` 任务默认排队串行执行。要让多个 Agent 并行写同一个项目，推荐为每个 Agent 创建独立的 git worktree，再用各自目录创建 Turnweft 会话；不同 worktree 不会互相阻塞。审查使用 `turnweft_ask`（`analyze`），它不等待项目写锁；同一会话仍然按 FIFO 排队。
+
+用户可自行在 `~/.turnweft/config.json` 中设置 `"parallelWrites": ["/absolute/project/directory"]`，允许该目录并行写入。Agent 绝不能代改此配置。并行改动可能互相覆盖，git 提交可能包含其他 Agent 的改动；实际重叠运行的任务会在 `concurrentWrites` 中列出彼此的 job ID，并显示警告。
+
 ## 配置
 
 可选设置写在 `~/.turnweft/config.json` 里：
@@ -211,6 +217,7 @@ Agent 的模式超出你的授权时，任务先记为 `waiting_confirmation`（
 - **`executables`**：指定各 Agent 命令行工具的路径。
   - 不指定时，先在 `PATH` 里找，再依次找 `~/.local/bin`、`/opt/homebrew/bin`、`/usr/local/bin`。
   - OpenCode 还会找 `~/.opencode/bin`，Dim 还会找 DimAgent.app 内置的 `dim`。
+- **`parallelWrites`** 是绝对项目目录数组，仅接受用户配置文件。路径先解析符号链接并规范化，再与会话 canonical root 精确匹配；不会递归匹配其他 canonical root（含嵌套 worktree）。同一 Git 根目录下的子目录会话共用该根目录的设置。相对路径、非字符串、不存在或非目录的条目被忽略。不能通过 MCP 参数、任务 CLI 标志或项目文件设置。每次尝试取锁都重新读取配置：已运行任务保留原共享／独占锁直到释放；独占任务等所有持有者退出，共享任务等独占持有者退出。
 - **`idleReleaseMs`**：Agent 空闲多久后停掉，默认 10 分钟。
 - **`inactivityTimeoutMs`**：一轮任务里 Agent 多久没有任何动静就取消，默认 10 分钟。
 

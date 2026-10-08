@@ -147,6 +147,15 @@ CC 的 `auto` 模式及其他非 bypass 模式照常弹窗，由 `src/tests/host
 | Dim 会话中途 auto → max | 第二轮 `effort={requested:max, effective:max}`，原生会话 ID 不变，记得第一轮的 token |
 | agy 会话中途 low → high | 带新 `--effort` 重启并接回同一对话，原生会话 ID 不变，记得第一轮的 token |
 
+## 3f. 同目录并行写入（U24，2026-10-07，自动化测试，测试机）
+
+本节使用假 Agent、临时 `TURNWEFT_HOME` 和真实 worker，不调用模型、不消耗额度；不是宿主交互或真实 Agent 验收。
+
+- 新增 12 项定向测试通过：配置校验与 realpath 精确匹配、共享／独占互斥与逐个释放、死亡 owner 和冻结持有者的停止证明、双向重叠记录与恢复保留、旧 SQLite 锁迁移、真实 worker 并行与同会话 FIFO、配置切换时两种模式的等待、MCP 参数拒绝、CLI 参数拒绝与警告、中英文警告。
+- `npm run build` 通过。`npm test` 共 164 项：153 通过、11 失败；默认串行与全部新增 U24 用例通过，但全量门禁未通过：测试沙箱禁止 `ps`，`pgrep`／`pkill` 无法读取进程列表，既有进程身份、接管恢复及对话框清理用例失败。直接运行系统探测命令已复现限制；没有修改 `proc.ts` 或放宽停止证明来绕过失败。
+- `node scripts/privacy-scan.mjs` 输出 `clean`；`git diff --check` 通过。权限不允许写入 worktree 的 Git 元数据，未能暂存或提交，因此未执行提交钩子。未推送、未发布。
+- `i18n-baseline.json` 保存的是历史 provider 权限文案及指纹；本次只增加结果警告，不改变该基线。
+
 ## 4. 插件启动器
 
 - 运行时已安装（`npm link`，`/opt/homebrew/bin/turnweft` 为指向 `dist/cli/main.js` 的符号链接）：启动器找到运行时，并成功启动 `turnweft mcp`（上面第 2 节即经由它运行）。

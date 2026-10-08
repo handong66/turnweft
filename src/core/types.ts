@@ -161,6 +161,8 @@ export interface Job {
   deliveredAt?: string;
   startedAt?: string;
   finishedAt?: string;
+  /** U24: overlapping implement job IDs, retained even after owner-loss recovery. */
+  concurrentWrites?: string[];
 }
 
 // ---------------------------------------------------------------- events (§10.4)
@@ -207,6 +209,8 @@ export interface FileChangeEvidence {
 }
 
 export interface JobResult {
+  /** Other implement jobs that ran concurrently in this canonical root. */
+  concurrentWrites?: string[];
   sessionId: string;
   jobId: string;
   provider: ProviderId;

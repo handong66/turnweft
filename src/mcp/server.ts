@@ -13,7 +13,7 @@ import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation/types.
 import type { CreateSessionInput, SubmitTurnInput, TurnweftService } from "../core/service.js";
 import { PROVIDERS } from "../core/types.js";
 import type { Envelope, HostBinding, PolicyProposal, ProviderId } from "../core/types.js";
-import { failure, serviceFailure, success } from "./envelope.js";
+import { failure, jobWarnings, serviceFailure, success } from "./envelope.js";
 import { spawnDialogHelper } from "./native-dialog.js";
 import { hostBypass, pruneHookRecords, type CallContext } from "../runtime/host-mode.js";
 import { dirname as pathDirname } from "node:path";
@@ -269,7 +269,7 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
           if (view.job.state === "waiting_confirmation" && view.job.proposalId) opts.showDialog?.(view.job.proposalId); // retry; the helper dedupes (round 5, 8)
           envelope = success(view, view.job.state === "waiting_confirmation"
             ? [`Still waiting for the user to choose in the Turnweft dialog (or run turnweft policy grant in a terminal). Keep calling turnweft_job (waitMs 25000, afterSeq ${view.nextSeq}); do not end this turn or resubmit.`]
-            : []);
+            : jobWarnings(view));
           break;
         }
         case "turnweft_cancel": envelope = success(await service.cancelJob(input.jobId as string)); break;

@@ -131,14 +131,17 @@ export async function runWorker(sessionId: string, store = new Store()): Promise
         continue;
       }
 
-      if (next.intent === "implement" && !store.acquireProjectLock(session.canonicalRoot, next.id, process.pid, token, isOwnerGone, nativeStopped)) {
+      // Re-read the user config for every attempt; a held lock keeps its original mode until release.
+      const lockMode = next.intent === "implement" && loadConfig().parallelWrites?.includes(session.canonicalRoot) ? "shared" : "exclusive";
+      if (next.intent === "implement" && !store.acquireProjectLock(session.canonicalRoot, next.id, process.pid, token, isOwnerGone, nativeStopped, lockMode)) {
         if (!lockNoted.has(next.id)) {
           store.appendEvent(next.id, "diagnostic", "turnweft", { message: "queued: another delegated write task holds this project's write lock" });
           lockNoted.add(next.id);
         }
         // The holder's worker may have died with its provider still running: wake that session's recovery.
-        const holder = store.projectLockHolder(session.canonicalRoot);
-        if (holder?.sessionId && holder.sessionId !== sessionId && isOwnerGone(holder.ownerPid, holder.ownerToken)) ensureWorkerFor(store, holder.sessionId);
+        for (const holder of store.projectLockHolders(session.canonicalRoot)) {
+          if (holder.sessionId && holder.sessionId !== sessionId && isOwnerGone(holder.ownerPid, holder.ownerToken)) ensureWorkerFor(store, holder.sessionId);
+        }
         await sleep(500);
         continue;
       }

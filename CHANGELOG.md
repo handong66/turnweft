@@ -6,6 +6,10 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 
 ## [Unreleased]
 
+### Added
+- User-only `parallelWrites` in `~/.turnweft/config.json` opts exact project roots into concurrent implement jobs. Default writes remain serialized; separate git worktrees are recommended for parallel writers. Shared/exclusive holds preserve exclusion across config changes and retain crash/frozen-provider recovery. Existing SQLite locks migrate as exclusive holders.
+- Overlapping write jobs report peer IDs in `concurrentWrites` and localized MCP/CLI warnings about overwritten changes and mixed-agent commits.
+
 ## [0.1.0-alpha.3] - 2026-10-05
 
 ### Added

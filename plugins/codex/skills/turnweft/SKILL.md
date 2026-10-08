@@ -14,3 +14,10 @@ Use the registered Turnweft MCP tools. They run through the `turnweft` runtime (
 7. Inspect the result, permission mapping and observed file changes. “Provider reports tests passed” is a claim, not independently verified evidence. Run appropriate checks yourself before stating verified acceptance, and distinguish unexecuted checks, reported checks and checks you actually ran.
 
 All calls use Envelope: ok, data, error and warnings. Surface actionable errors and confirmation warnings to the user. Session close preserves history and rejects busy sessions by default; choose cancel_running only when authorized to stop the running task.
+
+## Parallel writers and reviews
+
+- To run several writing agents in parallel on one project, give each its own git worktree and create each Turnweft session in that directory. Turnweft locks per canonical directory, so different worktrees do not block each other.
+- Implement jobs in the same directory queue by default. Use `turnweft_ask` (`analyze`) for reviews: it never queues behind the project write lock. Same-session turns always remain FIFO.
+- The user can opt an exact directory into concurrent writes with `"parallelWrites": ["/absolute/project/directory"]` in `~/.turnweft/config.json`. Only the user may change this setting; **the agent must never edit that config itself**. There is no tool argument, task flag or project-file override.
+- Risk: concurrent changes may overwrite each other, and git commits may include other agents' changes. Surface the `concurrentWrites` peer job IDs and warnings when present.

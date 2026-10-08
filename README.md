@@ -191,6 +191,12 @@ The approval covers one job, at the permissions it had when you submitted it. Th
 
 Confirmations are stored per agent × project × kind of task. List them with `turnweft policy list`, and revoke one with `turnweft policy revoke <id>`.
 
+## Parallel writing tasks
+
+Implement jobs in the same canonical root (a Git repository or worktree root) queue by default. To run several writing agents in parallel on one project, give each agent its own git worktree and create its Turnweft session in that directory. Separate worktrees do not block each other. Use `turnweft_ask` (`analyze`) for reviews: it never waits for the project write lock. Turns within one session still queue in FIFO order.
+
+Users can opt a directory into concurrent writes themselves with `"parallelWrites": ["/absolute/project/directory"]` in `~/.turnweft/config.json`. Agents must never edit this setting themselves. Changes may overwrite each other, and git commits may include another agent's changes. Jobs that actually overlap list each other's job IDs in `concurrentWrites` and show a warning.
+
 ## Configuration
 
 Optional settings live in `~/.turnweft/config.json`:
@@ -209,6 +215,7 @@ Optional settings live in `~/.turnweft/config.json`:
   - Hosts started from the Dock don't see shell variables, so this setting is the reliable way to choose.
   - Tool descriptions and workflow hints written for the model are always in English.
 - **`executables`** gives explicit paths to agent CLIs. Without it, Turnweft looks on `PATH`, then in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. It also checks `~/.opencode/bin` for OpenCode and the copy of `dim` bundled in DimAgent.app.
+- **`parallelWrites`** is an array of absolute project directories, accepted only from the user config file. Paths are resolved through symlinks and normalized, then matched exactly against the session canonical root; an entry does not recursively opt in other canonical roots, including nested worktrees. Sessions in subdirectories of the same Git root share that root's setting. Relative paths, non-strings, missing paths and non-directories are ignored. MCP arguments, per-task CLI flags and project files cannot set it. Each lock attempt re-reads the setting. Running jobs retain their shared/exclusive hold until release: exclusive jobs wait for all holders, and shared jobs wait for an exclusive holder.
 - **`idleReleaseMs`** is how long an idle agent is kept running before it is stopped. The default is 10 minutes.
 - **`inactivityTimeoutMs`** is how long a turn may go without any activity from the agent before it is cancelled. The default is 10 minutes.
 
