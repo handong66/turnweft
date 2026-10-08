@@ -181,6 +181,18 @@ CC 的 `auto` 模式及其他非 bypass 模式照常弹窗，由 `src/tests/host
 - schema 3 阻止旧运行时重新打开含限时 policy 的状态库；升级前仍须结束已加载旧代码的 worker。环境配置仅在新 provider 进程启动时生效，已有 provider 进程不热更新；既有 wait-mode job 不会因后来设置 fail-fast 而自动取消。
 - Git 元数据写入被沙箱拒绝，改动未暂存、未提交，提交钩子未运行。R1 和 R2 已各备可独立提交的补丁，并在临时 HEAD 快照上验证可顺序应用；没有推送或发布。
 
+## 3h. 分析任务拒绝操作后的结果分类（U26，自动化测试）
+
+基于 `6fddb77` 的工作树；使用假 Agent、临时 `TURNWEFT_HOME`、真实 worker 和 stream-json agy 替身。未调用真实模型，也未做真实宿主 UI 验收。
+
+- 根因：agy adapter 将 `SUCCESS` 携带的 `denied_actions` 映射为 `permission_blocked`，worker 原来无条件判失败；ACP 回调拒绝后 `end_turn` 原来无条件成功。当前 worker 对 analyze 使用最终文本分类，原生与回调拒绝汇总到 `deniedActions`。有输出时成功并保存 `denied_actions` 警告，空白输出且有拒绝时失败并说明 git 也被拒绝、须提供文件或使用 implement；无拒绝的空输出成功并提示 `empty_output`。
+- 回归覆盖：拒绝且有报告、拒绝且空白输出、agy 原生拒绝、无拒绝但无输出、implement 权限停止不因有文本而成功、取消／不完整结束／provider 错误优先、结果分页保留警告、MCP／CLI 渲染和中英文文案。agy 替身另验证报告和原生拒绝结构同时保留、取消优先。
+- 未注入预告：当前 ACP 和 agy 发送路径没有已使用的独立 system／instructions 通道，用户 prompt 保持原样。`i18n-baseline.json` 记录历史权限文案及指纹，本次没有修改这些内容。
+
+- 验证：`npm run build` 通过；`npm test` 共 189 项，178 通过、11 失败、0 跳过／取消；新增 U26 10 项全部通过。最终 MCP 定向测试 39/39 通过。11 项失败与 §3g 的完整名单一致，均在 `core-runtime.test.ts`；本轮直接探测再次确认 `ps` 为 `operation not permitted`，`pgrep` 为 `Cannot get process list`。未修改 `proc.ts` 或跳过用例，仍需在允许进程探测的环境重跑全量 gate。
+- `node scripts/privacy-scan.mjs`：clean（89 个 tracked 文件）；`git diff --check` 通过。`git add` 无法创建 worktree 的 `index.lock`（`Operation not permitted`），因此未暂存、未提交，提交钩子未执行。未推送、未发布。
+- 改动文件：`src/runtime/worker.ts`；`src/adapters/{agy,fake,types}.ts`；`src/core/{types,i18n}.ts`；`src/mcp/{envelope,server}.ts`；`src/tests/{core-runtime,agy-effort,cli-main,mcp-server,i18n}.test.ts` 与 `src/tests/fake-agy.ts`；`CHANGELOG.md`、`README.md`、`README.zh-CN.md`、`TURNWEFT_DESIGN_AND_DEVELOPMENT_PLAN.md`、两份插件 `skills/turnweft/SKILL.md`、`docs/m0/M0_RESULTS.md` 和本记录。
+
 ## 4. 插件启动器
 
 - 运行时已安装（`npm link`，`/opt/homebrew/bin/turnweft` 为指向 `dist/cli/main.js` 的符号链接）：启动器找到运行时，并成功启动 `turnweft mcp`（上面第 2 节即经由它运行）。

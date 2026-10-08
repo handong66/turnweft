@@ -11,6 +11,15 @@ if (effort !== undefined && !["low", "medium", "high", "xhigh", "max"].includes(
 }
 const conversation = args.includes("--conversation") ? args[args.indexOf("--conversation") + 1] : "agy-new-conv";
 process.stdout.write(`${JSON.stringify({ event: "init", conversation_id: conversation, init: { permission_mode: "request-review" } })}\n`);
-createInterface({ input: process.stdin }).on("line", () => {
+createInterface({ input: process.stdin }).on("line", line => {
+  const prompt = JSON.parse(line).message.content[0].text;
+  if (prompt.startsWith("denied:")) {
+    process.stdout.write(`${JSON.stringify({ event: "result", result: {
+      status: prompt === "denied:cancelled" ? "CANCELLED" : "SUCCESS",
+      response: prompt === "denied:empty" ? "" : "Review complete",
+      denied_actions: [{ action: "command", display_name: "RunCommand" }],
+    } })}\n`);
+    return;
+  }
   process.stdout.write(`${JSON.stringify({ event: "result", result: { status: "SUCCESS", response: `effort=${effort ?? "default"}` } })}\n`);
 });

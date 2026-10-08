@@ -5,7 +5,14 @@ import { text } from "../core/i18n.js";
 /** Shared by MCP and CLI, including status-only and recovered jobs without a final result. */
 export function jobWarnings(view: JobView): string[] {
   const jobs = view.result?.concurrentWrites ?? view.job.concurrentWrites;
-  return jobs?.length ? [text("concurrentWrites", { jobs: jobs.join(", ") })] : [];
+  const warnings = jobs?.length ? [text("concurrentWrites", { jobs: jobs.join(", ") })] : [];
+  for (const code of view.result?.warningCodes ?? []) {
+    const denied = view.result?.deniedActions ?? [];
+    warnings.push(code === "empty_output" ? text("emptyOutput") : text("deniedActions", {
+      count: String(denied.length), actions: denied.map(d => `${d.kind}:${d.title}`).join(", "),
+    }));
+  }
+  return warnings;
 }
 
 export function success<T>(data: T, warnings: string[] = []): Envelope<T> {

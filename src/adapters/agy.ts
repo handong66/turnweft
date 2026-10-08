@@ -118,16 +118,16 @@ export class AgyConnection implements Connection {
     this.onEvent = undefined;
     if (r.exited) throw new AdapterError("provider_error", `agy exited: ${this.stderrTail.slice(-300)}`);
     if (r.response) onEvent({ type: "text", text: String(r.response) });
-    const blocked = Array.isArray(r.denied_actions) ? r.denied_actions.map((d: Json) => `${d.action}:${d.display_name}`) : [];
+    const deniedActions = Array.isArray(r.denied_actions) ? r.denied_actions.map((d: Json) => ({ kind: String(d.action ?? "unknown"), title: String(d.display_name ?? "unknown") })) : [];
     if (r.status === "ERROR") {
       const msg = String(r.error ?? "agy reported ERROR");
       // SIGINT from cancel() ends the turn with status ERROR / "interrupted" (live run).
-      if (this.cancelRequested && /interrupt|cancel/i.test(msg)) return { stopReason: "cancelled", blocked, usage: r.usage };
+      if (this.cancelRequested && /interrupt|cancel/i.test(msg)) return { stopReason: "cancelled", deniedActions, usage: r.usage };
       if (/auth|login|sign in/i.test(msg)) throw new AdapterError("auth_required", msg);
       throw new AdapterError("provider_error", msg);
     }
-    // status SUCCESS with denied_actions means the turn stopped at a permission denial (M0 §4).
-    return { stopReason: blocked.length ? "permission_blocked" : (r.status === "CANCELLED" ? "cancelled" : "end_turn"), blocked, usage: r.usage };
+    // Preserve the native permission stop for implement. The worker applies U26 to analyze output.
+    return { stopReason: r.status === "CANCELLED" ? "cancelled" : (deniedActions.length ? "permission_blocked" : "end_turn"), deniedActions, usage: r.usage };
   }
 
   private cancelRequested = false;

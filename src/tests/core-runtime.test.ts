@@ -19,6 +19,8 @@ const { Store } = await import("../runtime/store.js");
 const { ownerToken, groupMembers, leaderState, nativeStopped, stopAndConfirm } = await import("../runtime/proc.js");
 const { isOwnerGone } = await import("../runtime/proc.js");
 const { runDialog } = await import("../cli/main.js");
+const { jobWarnings } = await import("../mcp/envelope.js");
+const { text: localizedText } = await import("../core/i18n.js");
 // All imports stay above the first test: a top-level await between tests lets the runner finish the root
 // test early and run after() (deleting HOME) before later tests register.
 type HostBinding = import("../core/types.js").HostBinding;
@@ -209,9 +211,83 @@ test("A06: analyze intent denies writes", async () => {
   const d = repo();
   const s = await svc.createSession({ provider: "droid", cwd: d, host });
   const v = await waitDone((await submit(s.id, "WRITE:nope.txt", "analyze")).id);
-  assert.equal(v.job.state, "succeeded");
+  assert.equal(v.job.state, "failed");
+  assert.equal(v.job.errorCode, "permission_blocked");
   assert.equal(existsSync(join(d, "nope.txt")), false);
   assert.equal(v.result?.permission?.answeredRequests[0]?.decision, "deny");
+});
+
+test("U26: analyze callback denials with a report succeed and retain every denied action", async () => {
+  const s = await svc.createSession({ provider: "droid", cwd: repo(), host });
+  const v = await waitDone((await submit(s.id, "ASK:read\nASK:execute\nASK:edit\nSAY:Review complete", "analyze")).id);
+  assert.equal(v.job.state, "succeeded");
+  assert.equal(v.job.errorCode, undefined);
+  assert.equal(v.result?.finalText, "Review complete");
+  assert.deepEqual(v.result?.deniedActions, [{ kind: "execute", title: "ask execute" }, { kind: "edit", title: "ask edit" }]);
+  assert.deepEqual(v.result?.warningCodes, ["denied_actions"]);
+  assert.deepEqual(jobWarnings(v), [localizedText("deniedActions", { count: "2", actions: "execute:ask execute, edit:ask edit" })]);
+  const page = await svc.getJob({ jobId: v.job.id, includeResult: true, resultOffset: 9999 });
+  assert.deepEqual(jobWarnings(page), jobWarnings(v), "warning is based on full output, not an empty result page");
+});
+
+test("U26: analyze callback denial with empty or whitespace output fails with recovery guidance", async () => {
+  const s = await svc.createSession({ provider: "droid", cwd: repo(), host });
+  for (const suffix of ["", "\nWHITESPACE"]) {
+    const v = await waitDone((await submit(s.id, `ASK:execute${suffix}`, "analyze")).id);
+    assert.equal(v.job.state, "failed");
+    assert.equal(v.job.errorCode, "permission_blocked");
+    assert.equal(v.result?.finalText.trim(), "");
+    assert.equal(v.job.failureReason, localizedText("analyzePermissionBlocked", { actions: "execute:ask execute" }));
+  }
+});
+
+test("U26: agy-style native denial after a report succeeds; without a report it fails", async () => {
+  const s = await svc.createSession({ provider: "agy", cwd: repo(), host });
+  for (const report of [true, false]) {
+    const v = await waitDone((await submit(s.id, report ? "SAY:Review verdict\nBLOCK" : "BLOCK", "analyze")).id);
+    assert.equal(v.job.state, report ? "succeeded" : "failed");
+    assert.equal(v.job.errorCode, report ? undefined : "permission_blocked");
+    assert.equal(v.result?.stopReason, "permission_blocked");
+    assert.deepEqual(v.result?.deniedActions, [{ kind: "command", title: "RunCommand" }]);
+    assert.deepEqual(v.result?.warningCodes, report ? ["denied_actions"] : undefined);
+    if (!report) assert.equal(v.job.failureReason, localizedText("analyzePermissionBlocked", { actions: "command:RunCommand" }));
+  }
+});
+
+test("U26: analyze empty output without denials succeeds with empty_output warning", async () => {
+  const s = await svc.createSession({ provider: "dim", cwd: repo(), host });
+  for (const prompt of ["STOP:end_turn", "WHITESPACE"]) {
+    const v = await waitDone((await submit(s.id, prompt, "analyze")).id);
+    assert.equal(v.job.state, "succeeded");
+    assert.equal(v.result?.deniedActions, undefined);
+    assert.deepEqual(v.result?.warningCodes, ["empty_output"]);
+    assert.deepEqual(jobWarnings(v), [localizedText("emptyOutput")]);
+  }
+});
+
+test("U26: implement permission stops still fail even with text; normal empty completion is unchanged", async () => {
+  const s = await svc.createSession({ provider: "agy", cwd: repo(), host });
+  for (const prompt of ["BLOCK", "SAY:Partial work\nBLOCK", "ASK:other\nSAY:Partial work\nSTOP:permission_blocked"]) {
+    const v = await waitDone((await submit(s.id, prompt, "implement")).id);
+    assert.equal(v.job.state, "failed");
+    assert.equal(v.job.errorCode, "permission_blocked");
+    assert.equal(v.result?.warningCodes, undefined);
+    assert.match(v.job.failureReason!, /provider stopped at denied actions:/);
+  }
+  const empty = await waitDone((await submit(s.id, "STOP:end_turn", "implement")).id);
+  assert.equal(empty.job.state, "succeeded");
+  assert.equal(empty.result?.warningCodes, undefined);
+});
+
+test("U26: report plus denial never hides cancellation, incomplete turns or provider errors", async () => {
+  const s = await svc.createSession({ provider: "droid", cwd: repo(), host });
+  for (const [end, state, code] of [["STOP:cancelled", "cancelled", undefined], ["STOP:max_tokens", "failed", "incomplete_max_tokens"], ["FAIL:provider", "failed", "provider_error"]] as const) {
+    const v = await waitDone((await submit(s.id, `SAY:Partial report\nASK:execute\n${end}`, "analyze")).id);
+    assert.equal(v.job.state, state);
+    assert.equal(v.job.errorCode, code);
+    assert.equal(v.result?.warningCodes, undefined);
+    assert.ok(v.result?.deniedActions?.length);
+  }
 });
 
 test("A07: another host must attach explicitly", async () => {

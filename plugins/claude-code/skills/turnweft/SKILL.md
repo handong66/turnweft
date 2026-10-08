@@ -48,6 +48,12 @@ Some agents can only work in a tier that is broader than the current grant (for 
 - `failed` with `permission_blocked`, `capability_mismatch`, `auth_required` or `session_not_found`: report the reason to the user; do not switch to another agent or start a new session silently.
 - `failed` with `invalid_effort`: the agent does not offer that thinking level with this model; nothing was sent. The reason lists the values it offers. Ask the user which one to use, then `update` the same session with it and resubmit the turn with a new `requestId`.
 
+## Read-only analysis and denied actions
+
+Analyze turns deny every command, including `git show`, `git diff` and `git log`; reading files is allowed. When the agent needs a diff, log or other command output, the host must export it to a file first and point the agent to that file. Do not expect an analyze agent to run a read-only command.
+
+For normally ended analyze turns (including native permission stops), non-empty final text means `succeeded`; denied requests are listed in `result.deniedActions` (`kind`, `title`), with `warningCodes: ["denied_actions"]` and a localized envelope warning that the result may be incomplete. Surface that warning and inspect the report. Empty/whitespace output plus a denial means `failed` / `permission_blocked`: supply the needed output as files, or use implement when authorized. Empty output with no denial stays `succeeded` with `empty_output`. Implement permission stops still fail, even if they returned text; cancellation, provider errors and incomplete turns retain their existing classifications. User prompt text is not rewritten.
+
 ## Parallel writers and reviews
 
 - To run several writing agents in parallel on one project, give each its own git worktree and create each Turnweft session in that directory. Turnweft locks per canonical directory, so different worktrees do not block each other.

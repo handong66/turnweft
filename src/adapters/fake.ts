@@ -91,6 +91,7 @@ class FakeConnection implements Connection {
       else if (cmd === "RECALL") onEvent({ type: "text", text: hist.memory.token ?? "(nothing)" });
       else if (cmd === "EFFORT") this.snapshot.effort = arg;
       else if (cmd === "SAY") onEvent({ type: "text", text: arg }); // no trailing newline, like streamed agent text
+      else if (cmd === "WHITESPACE") onEvent({ type: "text", text: " \n\t" });
       else if (cmd === "TOOL") onEvent({ type: "tool", kind: "read", title: arg, status: "completed" });
       else if (cmd === "WRITE") {
         const decision = this.tier!.decide("edit", `write ${arg}`);
@@ -113,7 +114,7 @@ class FakeConnection implements Connection {
       else if (cmd === "SETMODE_IDLE") { setTimeout(() => { this.snapshot.mode = arg; }, 200); } // changes after the turn, no event
       else if (cmd === "SETMODE") { this.snapshot.mode = arg; onEvent({ type: "config", effective: { ...this.snapshot } }); }
       else if (cmd === "STOP") { writeFileSync(file, JSON.stringify(hist)); return { stopReason: arg }; }
-      else if (cmd === "BLOCK") { writeFileSync(file, JSON.stringify(hist)); return { stopReason: "permission_blocked", blocked: ["command:RunCommand"] }; }
+      else if (cmd === "BLOCK") { writeFileSync(file, JSON.stringify(hist)); return { stopReason: "permission_blocked", deniedActions: [{ kind: "command", title: "RunCommand" }] }; }
       else if (line) onEvent({ type: "text", text: `echo ${line}\n` });
     }
     writeFileSync(file, JSON.stringify(hist));

@@ -44,6 +44,20 @@ test("U23: without a request agy gets no flag", async () => {
   assert.deepEqual(r.effort, { requested: undefined, effective: undefined });
 });
 
+test("U26: native agy denial preserves report and structured actions; cancellation takes precedence", async () => {
+  const c = new AgyConnection(exe, tmpdir());
+  try {
+    await c.open({ cwd: tmpdir(), tier });
+    for (const suffix of ["report", "empty", "cancelled"]) {
+      let report = "";
+      const outcome = await c.prompt(`denied:${suffix}`, e => { if (e.type === "text") report += e.text; });
+      assert.equal(report, suffix === "empty" ? "" : "Review complete");
+      assert.equal(outcome.stopReason, suffix === "cancelled" ? "cancelled" : "permission_blocked");
+      assert.deepEqual(outcome.deniedActions, [{ kind: "command", title: "RunCommand" }]);
+    }
+  } finally { await c.close(); }
+});
+
 test("U23 review 2: agy rejecting a level is invalid_effort, even when the value is long", async () => {
   for (const bad of ["bogus", "x".repeat(1000), "x".repeat(5000)]) { // the last one is longer than the kept stderr tail
     await assert.rejects(new AgyConnection(exe, tmpdir()).open({ cwd: tmpdir(), tier, effort: bad }),

@@ -68,7 +68,7 @@ session ID 格式不统一：Dim 为 `sess_<ts>_<rand>`，OpenCode 为 `ses_…`
 - **L1 与 L2 都通过**：同一进程内追问正确；关闭后用 `--conversation <id>` 新进程追问正确，ID 不变。
 - **权限**：
   - `--mode accept-edits` 下，无界面时**文件编辑被允许**（成功修好两个 bug）。
-  - 未匹配允许规则的命令（如 `npm test`）被自动拒绝。拒绝后这一轮立即结束、回复为空，但 **`status` 仍为 `SUCCESS`**，只在 `result.denied_actions` 中列出被拒操作。adapter 必须把非空 `denied_actions` 视为“被权限阻断”，不能报告成功。
+  - 未匹配允许规则的命令（如 `npm test`）被自动拒绝。拒绝后这一轮立即结束、回复为空，但 **`status` 仍为 `SUCCESS`**，只在 `result.denied_actions` 中列出被拒操作。adapter 必须把非空 `denied_actions` 视为“被权限阻断”，不能报告成功。（U26 更新：这条历史结论针对当次空输出；当前 analyze 有非空报告时由 worker 判成功并附拒绝警告，空输出仍为 `permission_blocked`；implement 权限停止仍失败，见设计 §1.3／§10.3。）
   - `settings.json` 中的 `permissions.allow` 规则在无界面时生效：测试机已有的一条 `command(cp)` 允许规则让 `cp` 命令直接执行。agy 自己的报错文案也建议用这种方式添加允许规则。
   - 另有项目级授权：`~/.gemini/config/projects/<id>.json` 的 `permissionGrants.allow`（规则如 `read_file(<path>)`、`command(<name>)`），与 agy 的 `--project` 关联。
   - 结论：agy 的 U11 档位可以用“`accept-edits` + 精确的命令允许规则”表达，**不需要** `--dangerously-skip-permissions`。规则写在哪里（项目级 grant 还是用户级 settings），M2 定。

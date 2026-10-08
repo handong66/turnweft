@@ -8,6 +8,8 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 
 ### Fixed
 
+- Analyze outcomes now account for returned text: denied commands with a report succeed with structured `deniedActions` and localized MCP/CLI warnings; denials without output fail as `permission_blocked` with file-export guidance. Empty output without denials succeeds with `empty_output`. This handles both ACP callbacks and agy native denials while preserving implement permission-stop failures (U26).
+
 - Probe dead project-lock owners outside SQLite write transactions, then fence reclamation against holder and lease changes (U24).
 
 ### Changed

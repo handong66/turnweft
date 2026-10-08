@@ -44,8 +44,8 @@ export type AdapterEvent =
 
 export interface PromptOutcome {
   stopReason: string;
-  /** Provider reported success but blocked actions (e.g. agy denied_actions). */
-  blocked?: string[];
+  /** Provider-native denied actions (e.g. agy denied_actions), independent of callback approvals. */
+  deniedActions?: Array<{ kind: string; title: string }>;
   usage?: Record<string, unknown>;
 }
 

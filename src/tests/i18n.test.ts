@@ -151,3 +151,16 @@ test("U24: concurrent write warning is localized with peer IDs", () => {
   assert.equal(text("concurrentWrites", { jobs: "twj_a, twj_b" }, "zh"), "同一目录有其他写任务同时运行：twj_a, twj_b；改动可能互相覆盖，git 提交可能包含其他 Agent 的改动");
   assert.equal(text("concurrentWrites", { jobs: "twj_a, twj_b" }, "en"), "Other write jobs ran concurrently in the same directory: twj_a, twj_b; changes may overwrite each other, and git commits may include another agent's changes.");
 });
+
+test("U26: denial and empty-output messages render in Chinese and English", () => {
+  const params = { count: "1", actions: "execute:git show" };
+  assert.equal(text("deniedActions", params, "zh"), "只读任务拒绝了 1 个操作：execute:git show；结果可能不完整");
+  assert.equal(text("deniedActions", params, "en"), "Read-only task denied 1 action(s): execute:git show; the result may be incomplete.");
+  for (const language of ["zh", "en"] as const) {
+    const reason = text("analyzePermissionBlocked", params, language);
+    assert.match(reason, /execute:git show/);
+    assert.match(reason, /implement/);
+    assert.match(reason, language === "zh" ? /所有命令，包括 git.*文件/ : /all commands including git.*files/);
+    assert.match(text("emptyOutput", undefined, language), /empty_output/);
+  }
+});

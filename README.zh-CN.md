@@ -171,6 +171,8 @@ Claude Code / Codex ──MCP──▶ turnweft mcp ──▶ 共享状态库（
 - **空闲与续接。** Agent 空闲 10 分钟后会被停掉，下次请求时按原生会话 ID 续接。续接失败会明确报错，不会悄悄开一个新会话。
 - **两个宿主，一份状态。** Claude Code 和 Codex 共用同一份状态。要在另一个宿主里继续某个会话，需要显式 attach。
 
+analyze 拒绝所有命令，包括 git；允许读取文件。需要 diff、log 或其他命令输出时，宿主须先导出到文件，再让 Agent 读取该文件。正常结束的 analyze（含原生权限停止）只要有非空输出就算 `succeeded`；有拒绝时，`result.deniedActions` 列出操作，MCP／CLI 显示“结果可能不完整”的中英文警告。空输出且有拒绝则为 `failed / permission_blocked`，提示提供文件或按授权使用 implement；空输出但无拒绝仍成功，并提示 `empty_output`。implement 因权限停止仍然失败，即使已返回文字。这些状态不代表报告质量通过验收。
+
 完整设计和所有决定见 [TURNWEFT_DESIGN_AND_DEVELOPMENT_PLAN.md](TURNWEFT_DESIGN_AND_DEVELOPMENT_PLAN.md)。测试记录见 [docs/m0/M0_RESULTS.md](docs/m0/M0_RESULTS.md)（协议探针）和 [docs/e2e/E2E_RESULTS.md](docs/e2e/E2E_RESULTS.md)（端到端）。
 
 ## 权限确认的细节

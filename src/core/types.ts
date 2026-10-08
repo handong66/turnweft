@@ -211,6 +211,10 @@ export interface FileChangeEvidence {
 }
 
 export interface JobResult {
+  /** U26: denied callback requests and provider-native denied actions. */
+  deniedActions?: Array<{ kind: string; title: string }>;
+  /** Persisted before result pagination; rendered in the host's current language. */
+  warningCodes?: Array<"denied_actions" | "empty_output">;
   /** Other implement jobs that ran concurrently in this canonical root. */
   concurrentWrites?: string[];
   sessionId: string;

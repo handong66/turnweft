@@ -303,6 +303,23 @@ test("R2: doctor explains each ignored parallelWrites entry", async () => {
   } finally { rmSync(join(testHome, "config.json")); }
 });
 
+test("U26: CLI renders deniedActions and empty_output warnings in human and JSON output", async () => {
+  for (const code of ["denied_actions", "empty_output"] as const) {
+    const service = new FakeService();
+    const original = service.getJob.bind(service);
+    service.getJob = async input => {
+      const view = await original(input);
+      return { ...view, result: { sessionId: view.session.id, jobId: view.job.id, provider: "droid" as const, adapterVersion: "test", cwd: "/project", state: "succeeded" as const, resultComplete: true, truncated: false, toolCalls: [], finalText: "", warningCodes: [code], deniedActions: [{ kind: "execute", title: "git show" }] } };
+    };
+    for (const json of [false, true]) {
+      const h = harness();
+      assert.equal(await runCli(["job", "result", "twj_job", ...(json ? ["--json"] : [])], service, h.io), 0);
+      const output = json ? h.envelope().warnings.join(" ") : h.stderr();
+      assert.match(output, code === "denied_actions" ? /execute:git show.*incomplete/ : /empty_output/);
+    }
+  }
+});
+
 test("U25: non-interactive CLI forwards only do-not-wait and never opens a dialog", async () => {
   const h = harness("hello"); const service = new FakeService(); service.confirmationNeeded = true;
   let dialogs = 0;
