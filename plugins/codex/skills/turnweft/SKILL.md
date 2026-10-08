@@ -3,6 +3,12 @@ name: turnweft
 description: Delegate bounded analysis or implementation to dim, droid, grok, opencode or agy and continue exact persistent sessions.
 ---
 
+For **long-running or unattended work**, pass `nonInteractive: true` on every `turnweft_ask` / `turnweft_delegate` call. This means do not wait, never permission to run. User config `confirmationMode: "fail-fast"` also enforces this; false/absent call flags defer to config. If the result is `needs_confirmation`, **mark that task blocked, continue other independent work, and report blocked tasks with the returned `grantCommand` at the end**. Do not poll a nonexistent job, downgrade implement to analyze, or resubmit through the CLI. The waiting instructions below apply only to wait-mode submissions.
+
+**Never shell out to the Turnweft CLI as a fallback**, including `export ...; turnweft send`: the CLI cannot see the host's per-call permission mode and may wait for confirmation. If agy or another provider needs an API key/base URL or other variables, tell the user to set `providerEnv: { "agy": { "VARIABLE_NAME": "value" } }` in `~/.turnweft/config.json`. Only the user may edit this file; **the agent must never edit it**, grant policy itself, or pass environment values via tool arguments/project files. New provider processes and probes read this config; already running provider processes keep their launch environment.
+
+The user may pre-authorize a single project in their own terminal with `turnweft policy grant --provider <id> --root <dir> --intent implement --until <ISO time or HH:MM>`, review tier/excess and type yes. Queued tasks cannot start after expiry; running tasks continue. A same-request retry with a fresh host-supplied bypass can release just that waiting job; never manufacture a bypass signal. Existing wait-mode jobs retain their queue position until confirmed, cancelled or expired; opting into fail-fast later does not cancel them.
+
 Use the registered Turnweft MCP tools. They run through the `turnweft` runtime (`npm install -g turnweft`); if it is missing, the plugin offers only a `turnweft_setup` tool that explains how to install it. Do not shell out to the `turnweft` command line instead: it cannot see this thread's permission mode, so it never takes the full-access shortcut and asks the user whenever a confirmation is required.
 
 1. Call `turnweft_agents` for availability, versions, capabilities and problems. Choose a provider; do not override its model or thinking level unless the user explicitly requests one.

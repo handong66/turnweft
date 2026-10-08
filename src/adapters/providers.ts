@@ -10,6 +10,7 @@ import type { AgentCapabilities, Intent, ProbeResult, ProviderId } from "../core
 import { loadConfig } from "../runtime/config.js";
 import { AcpConnection, type AcpProfile } from "./acp.js";
 import { AgyConnection } from "./agy.js";
+import { redact, providerError } from "../runtime/secrets.js";
 import { providerEnv } from "./env.js";
 import type { Adapter, ConnectHooks, Connection, PermissionKind, TierSpec } from "./types.js";
 
@@ -58,12 +59,12 @@ function missingExecutable(provider: ProviderId): string {
     : `${provider} executable not found (set executables.${provider} in ~/.turnweft/config.json)`;
 }
 
-function version(exe: string): Promise<string | undefined> {
+function version(exe: string, provider: ProviderId): Promise<string | undefined> {
   return new Promise((resolve) => {
-    execFile(exe, ["--version"], { timeout: 15000, env: providerEnv(exe) }, (err, stdout) => {
+    execFile(exe, ["--version"], { timeout: 15000, env: providerEnv(exe, undefined, undefined, provider) }, (err, stdout) => {
       if (err) return resolve(undefined);
-      const m = String(stdout).match(/\d+\.\d+\.\d+(?:[-+.\w]*)?(?:\s*\([0-9a-f]+\))?/);
-      resolve(m ? m[0] : String(stdout).trim().slice(0, 60));
+      const m = redact(String(stdout)).match(/\d+\.\d+\.\d+(?:[-+.\w]*)?(?:\s*\([0-9a-f]+\))?/);
+      resolve(m ? m[0] : redact(String(stdout)).trim().slice(0, 60));
     });
   });
 }
@@ -212,9 +213,9 @@ function makeAdapter(def: ProfileDef): Adapter {
       const exe = resolveExecutable(def.provider);
       const base = { provider: def.provider, adapterVersion: ADAPTER_VERSION, probedAt: new Date().toISOString() };
       if (!exe) return { ...base, available: false, problems: [missingExecutable(def.provider)] };
-      const v = await version(exe);
+      const v = await version(exe, def.provider);
       const problems: string[] = [];
-      if (!v) problems.push("could not read --version");
+      if (!v) problems.push(providerError("could not read --version", def.provider));
       if (def.provider === "grok") problems.push(`grok permission_mode=${grokPermissionMode()} (from ~/.grok/config.toml)`);
       return { ...base, available: Boolean(v), executable: exe, cliVersion: v, capabilities: def.capabilities, problems };
     },
@@ -222,7 +223,7 @@ function makeAdapter(def: ProfileDef): Adapter {
     connect(cwd: string, hooks?: ConnectHooks): Connection {
       const exe = resolveExecutable(def.provider);
       if (!exe) throw new Error(missingExecutable(def.provider));
-      return def.acp ? new AcpConnection(def.acp(exe), cwd, hooks) : new AgyConnection(exe, cwd, hooks);
+      return def.acp ? new AcpConnection({ ...def.acp(exe), provider: def.provider }, cwd, hooks) : new AgyConnection(exe, cwd, hooks);
     },
   };
 }

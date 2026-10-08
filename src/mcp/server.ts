@@ -1,3 +1,5 @@
+import { nonInteractive } from "../runtime/config.js";
+import { redact } from "../runtime/secrets.js";
 import { createRequire } from "node:module";
 import { text } from "../core/i18n.js";
 import { randomUUID } from "node:crypto";
@@ -60,12 +62,12 @@ const sessionSchema: Tool["inputSchema"] = {
     object({ action: { const: "close" }, sessionId: string, policy: { enum: ["reject_if_busy", "cancel_running"] } }, ["action", "sessionId"]),
   ],
 };
-const turnSchema = object({ sessionId: string, prompt: string, requestId: string }, ["sessionId", "prompt", "requestId"]);
+const turnSchema = object({ sessionId: string, prompt: string, requestId: string, nonInteractive: boolean }, ["sessionId", "prompt", "requestId"]);
 const tools: Tool[] = [
   { name: "turnweft_agents", description: "List targets, versions, capabilities and problems; does not submit a model task.", inputSchema: object({ refresh: boolean }), annotations: { readOnlyHint: true } },
   { name: "turnweft_session", description: "Create/list/get/attach/close an exact session. Names are labels, not resume handles. model and effort (thinking level, in the agent's own values) are set only when the user asks. update changes effort for the following turns in the same session, keeping its context. An unsupported effort fails the next turn with invalid_effort, lists the values offered, and sends nothing. List scope defaults to this_host; project requires canonicalRoot and finds sessions across hosts before explicit attach.", inputSchema: sessionSchema },
-  { name: "turnweft_ask", description: "Submit analyze intent in the background. Generate and save requestId before calling; reuse it for retries. If the result is awaiting_confirmation, keep calling turnweft_job in the same turn until the job starts (up to ~10 minutes); never resubmit.", inputSchema: turnSchema },
-  { name: "turnweft_delegate", description: "Submit implement intent in the background, with human U11 confirmation when required. Save requestId before calling. If the result is awaiting_confirmation, a Turnweft dialog is waiting for the user: keep calling turnweft_job (waitMs 25000, afterSeq = previous nextSeq) in the same turn until the job leaves waiting_confirmation (up to ~10 minutes); never resubmit.", inputSchema: turnSchema },
+  { name: "turnweft_ask", description: "Submit analyze intent in the background. Generate and save requestId before calling; reuse it for retries. For long-running or unattended work pass nonInteractive:true; needs_confirmation means mark blocked, continue independent work, report at the end; never downgrade intent or use the CLI. If the result is awaiting_confirmation, keep calling turnweft_job in the same turn until the job starts (up to ~10 minutes); never resubmit.", inputSchema: turnSchema },
+  { name: "turnweft_delegate", description: "Submit implement intent in the background, with human U11 confirmation when required. Save requestId before calling. For long-running or unattended work pass nonInteractive:true; needs_confirmation means mark blocked, continue independent work, report at the end; never downgrade intent or use the CLI. If the result is awaiting_confirmation, a Turnweft dialog is waiting for the user: keep calling turnweft_job (waitMs 25000, afterSeq = previous nextSeq) in the same turn until the job leaves waiting_confirmation (up to ~10 minutes); never resubmit.", inputSchema: turnSchema },
   { name: "turnweft_job", description: "Read job state, events and paged results. Defaults to immediate return; waits are bounded. ok describes the query, not job success.", inputSchema: object({ jobId: string, afterSeq: integer, waitMs: integer, includeResult: boolean, resultOffset: integer, resultLimit: { type: "integer", minimum: 1 } }, ["jobId"]), annotations: { readOnlyHint: true } },
   { name: "turnweft_cancel", description: "Request cancellation of an exact job; the returned state determines whether it has stopped.", inputSchema: object({ jobId: string }, ["jobId"]) },
 ];
@@ -104,7 +106,7 @@ function logConfirmation(entry: Record<string, unknown>) {
   try {
     const dir = join(process.env.TURNWEFT_HOME ?? join(homedir(), ".turnweft"), "logs");
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    appendFileSync(join(dir, "mcp.log"), JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n", { mode: 0o600 });
+    appendFileSync(join(dir, "mcp.log"), JSON.stringify(redact({ at: new Date().toISOString(), ...entry })) + "\n", { mode: 0o600 });
   } catch { /* diagnostics never affect the call */ }
 }
 
@@ -115,14 +117,16 @@ const confirmSchema = () => ({
   required: ["confirm"],
 });
 
-export function confirmationRequired(proposal: PolicyProposal, reason?: string) {
-  return success({ kind: "needs_confirmation" as const, proposal: publicProposal(proposal), nextAction: "confirm_policy" as const }, [
+export function confirmationRequired(proposal: PolicyProposal, reason?: string, failFast = false) {
+  return success({ kind: "needs_confirmation" as const, proposal: publicProposal(proposal), nextAction: failFast ? "mark_blocked" as const : "confirm_policy" as const, grantCommand: `turnweft policy grant ${proposal.proposalId}` }, [
     ...(reason ? [reason] : []),
+    ...(failFast ? ["Mark this task blocked, continue independent work, and report blocked tasks at the end. Do not downgrade implement to analyze or resubmit through the CLI. Only the user may run the grant command."] : []),
     `Ask the user to run turnweft policy grant ${proposal.proposalId} in a terminal, then resubmit with the same requestId.`,
   ]);
 }
 
 function toolResult(envelope: Envelope<unknown>): CallToolResult {
+  envelope = redact(envelope);
   return { content: [{ type: "text", text: JSON.stringify(envelope) }], structuredContent: { ...envelope }, isError: !envelope.ok };
 }
 
@@ -185,7 +189,13 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
         case "turnweft_ask":
         case "turnweft_delegate": {
           const turn: SubmitTurnInput = { ...(input as Pick<SubmitTurnInput, "sessionId" | "prompt" | "requestId">), host, intent: request.params.name === "turnweft_ask" ? "analyze" : "implement", ...(bypass ? { hostBypass: bypass } : {}) };
+          if (nonInteractive(turn.nonInteractive)) turn.nonInteractive = true;
           let outcome = await service.submitTurn(turn);
+          const failFast = nonInteractive(turn.nonInteractive) || (outcome.kind === "needs_confirmation" && outcome.confirmationMode === "fail-fast");
+          if (failFast && (outcome.kind === "needs_confirmation" || outcome.kind === "awaiting_confirmation")) {
+            return toolResult(confirmationRequired(outcome.proposal, outcome.kind === "awaiting_confirmation"
+              ? `This retry refers to an existing wait-mode job (${outcome.job.id}); it remains waiting until confirmed, cancelled, or expired. No new dialog was requested.` : undefined, true));
+          }
           if (outcome.kind === "needs_confirmation") {
             const proposal = outcome.proposal;
             const client = server.getClientVersion();
@@ -266,9 +276,9 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
         }
         case "turnweft_job": {
           const view = await service.getJob({ ...input, jobId: input.jobId as string, waitMs: boundedWait(input.waitMs as number | undefined, opts) });
-          if (view.job.state === "waiting_confirmation" && view.job.proposalId) opts.showDialog?.(view.job.proposalId); // retry; the helper dedupes (round 5, 8)
+          if (view.job.state === "waiting_confirmation" && view.job.confirmationMode !== "fail-fast" && view.job.proposalId) opts.showDialog?.(view.job.proposalId); // retry; the helper dedupes (round 5, 8)
           envelope = success(view, view.job.state === "waiting_confirmation"
-            ? [`Still waiting for the user to choose in the Turnweft dialog (or run turnweft policy grant in a terminal). Keep calling turnweft_job (waitMs 25000, afterSeq ${view.nextSeq}); do not end this turn or resubmit.`]
+            ? view.job.confirmationMode === "fail-fast" ? ["Mark this task blocked, continue independent work, and report blocked tasks at the end. Do not downgrade intent or resubmit through the CLI."] : [`Still waiting for the user to choose in the Turnweft dialog (or run turnweft policy grant in a terminal). Keep calling turnweft_job (waitMs 25000, afterSeq ${view.nextSeq}); do not end this turn or resubmit.`]
             : jobWarnings(view));
           break;
         }

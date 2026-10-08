@@ -129,8 +129,8 @@ You can also change the thinking level mid-conversation ("let Dim think harder f
 ## Permissions and safety
 
 - **Read-only when you ask for analysis.** Reviews and questions run in each agent's read-only or ask-first mode wherever the agent has one. Grok is the exception: Turnweft can't verify Grok's actual permission mode, so Grok tasks need one confirmation even for analysis. If your Grok config auto-approves everything, Grok can't be held read-only at all, and the confirmation says so.
-- **Broader modes are confirmed once.** Some agents can only edit in a mode that goes beyond what you granted. For example, the agent approves commands automatically, or it skips its own permission checks. Then a macOS dialog asks you once per agent × project × kind of task. If the agent's version changes, or the mode starts allowing more, you are asked again.
-- **Bypass conversations aren't asked.** In Claude Code, only `bypassPermissions` counts; auto mode and every other mode still show the dialog. In Codex, only full access (`danger-full-access`) counts. Turnweft learns the mode from Claude Code or Codex itself, never from what the model says. This kind of approval covers one task and is not remembered.
+- **Broader modes are confirmed once.** Some agents can only edit in a mode that goes beyond what you granted. For example, the agent approves commands automatically, or it skips its own permission checks. In the default wait mode, a macOS dialog asks you once per agent × project × kind of task. If the agent's version changes, or the mode starts allowing more, you are asked again.
+- **Bypass conversations aren't asked.** In Claude Code, only `bypassPermissions` counts; auto mode and other modes still require policy confirmation (or return blocked in fail-fast mode). In Codex, only full access (`danger-full-access`) counts. Turnweft learns the mode from Claude Code or Codex itself, never from what the model says. This kind of approval covers one task and is not remembered.
 - **Every result tells the truth about permissions.** It states the mode the agent actually ran with, what that mode allows beyond your grant, and what authorized it.
 - **Nothing runs twice by accident.** If the connection to the agent drops after a task was handed over, the task is marked `in_doubt` for you to check. It is never resent automatically. Closing Claude Code or Codex doesn't stop a running task: it keeps going in the background, and you can check on it later.
 - **Local only.** Turnweft keeps its state in `~/.turnweft` and makes no network requests of its own. The agents themselves talk to their providers as usual.
@@ -204,6 +204,8 @@ Optional settings live in `~/.turnweft/config.json`:
 ```json
 {
   "language": "en",
+  "confirmationMode": "wait",
+  "providerEnv": { "agy": { "API_KEY": "your-provider-value" } },
   "executables": { "droid": "/custom/path/droid" },
   "idleReleaseMs": 600000,
   "inactivityTimeoutMs": 600000
@@ -215,15 +217,32 @@ Optional settings live in `~/.turnweft/config.json`:
   - Hosts started from the Dock don't see shell variables, so this setting is the reliable way to choose.
   - Tool descriptions and workflow hints written for the model are always in English.
 - **`executables`** gives explicit paths to agent CLIs. Without it, Turnweft looks on `PATH`, then in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. It also checks `~/.opencode/bin` for OpenCode and the copy of `dim` bundled in DimAgent.app.
-- **`parallelWrites`** is an array of absolute project directories, accepted only from the user config file. Paths are resolved through symlinks and normalized, then matched exactly against the session canonical root; an entry does not recursively opt in other canonical roots, including nested worktrees. Sessions in subdirectories of the same Git root share that root's setting. Relative paths, non-strings, missing paths and non-directories are ignored. MCP arguments, per-task CLI flags and project files cannot set it. Each lock attempt re-reads the setting. Running jobs retain their shared/exclusive hold until release: exclusive jobs wait for all holders, and shared jobs wait for an exclusive holder.
+- **`confirmationMode`** is `"wait"` (default) or `"fail-fast"`. For overnight work use fail-fast, or pass `nonInteractive: true` to MCP ask/delegate or `--non-interactive` to `turnweft send`. True always opts out of waiting; false/absent defers to config and cannot force waiting. Missing authorization returns `needs_confirmation` with provider, project, intent, tier, excess and an exact `grantCommand`; no dialog, elicitation, job or queue entry is created and nothing is sent. The proposal is kept for up to 24 hours. The host marks the task blocked, continues independent work and reports blocked tasks at the end; it must not downgrade intent or fall back to the CLI. After the user grants it, resubmit with the same requestId. Existing wait-mode jobs retain their queue position until confirmed, cancelled or expired; changing the mode does not cancel them.
+- **`providerEnv`** maps provider IDs to string environment variables. User config overrides inherited values for that provider; executable/Node PATH helpers are then applied. Use the actual variable names required by your provider (the example name is illustrative). This fixes missing API keys/base URLs in GUI-launched MCP servers without shell/CLI fallback. New provider processes and probes read it at launch, including those launched by an already running worker. Running provider processes keep their original environment until reopened; agent discovery may cache probes for 60 seconds (`agents list --refresh` refreshes them). Values are not included in records or diagnostics, and echoed values are redacted from results/events/output. Only the user may edit this config; agents must never edit it. Tool arguments and project files cannot set it.
+- **`parallelWrites`** is an array of absolute project directories, accepted only from the user config file. Paths are resolved through symlinks and normalized, then matched exactly against the session canonical root; an entry does not recursively opt in other canonical roots, including nested worktrees. Sessions in subdirectories of the same Git root share that root's setting. Relative paths, non-strings, missing paths and non-directories are ignored; `turnweft doctor` lists each ignored entry and its reason. MCP arguments, per-task CLI flags and project files cannot set it. Each lock attempt re-reads the setting. Running jobs retain their shared/exclusive hold until release: exclusive jobs wait for all holders, and shared jobs wait for an exclusive holder.
 - **`idleReleaseMs`** is how long an idle agent is kept running before it is stopped. The default is 10 minutes.
 - **`inactivityTimeoutMs`** is how long a turn may go without any activity from the agent before it is cancelled. The default is 10 minutes.
+
+After upgrading to this runtime, retire old-version workers before using expiring grants. State schema 3 prevents older runtimes from reopening the database; already loaded worker code cannot be hot-updated.
+
+## Pre-authorize an overnight task
+
+Run this yourself in a terminal before leaving:
+
+```bash
+turnweft policy grant --provider agy --root . --intent implement --until 08:00
+```
+
+Review the same project, tier and excess shown in the dialog, then type `yes`. `--until` accepts a future ISO timestamp with timezone or the next occurrence of HH:MM in your local timezone. Both stdin and stdout must be TTYs; auto-yes flags and all-project scope are rejected. This creates an ordinary U11 policy without a prior proposal. Expiry is checked at submit and before execution: a queued job fails with `policy_expired` without sending its prompt; running jobs are not killed. `policy list` labels expired grants. You can also add `--until` to `policy grant <proposalId>`.
+
+A fresh, trusted MCP bypass retry with the same requestId/session/intent/prompt can release that one undelivered waiting job, bound to current capabilities. It does not confirm the shared proposal or release other jobs. Finished, expired, delivered and `in_doubt` jobs are never revived or resent. “Do not wait” never grants permission.
 
 ## Command line
 
 The plugins cover normal use. The CLI is useful for scripting and inspection:
 
 ```bash
+turnweft send --session <id> --non-interactive --prompt-file task.txt
 turnweft session create --agent droid --cwd .        # returns a tws_… session ID
 turnweft session update tws_… --effort high          # thinking level for the following tasks
 echo "Fix the bug in src/math.js and run the tests" | turnweft send --session tws_… --intent implement

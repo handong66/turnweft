@@ -401,3 +401,45 @@ test("U24: MCP job results surface concurrent write warnings", async t => {
   assert.equal(result.warnings.length, 1);
   assert.match(result.warnings[0]!, /twj_other/);
 });
+
+test("U25: nonInteractive suppresses all confirmation channels and rejects providerEnv injection", async t => {
+  const service = new FakeService(); service.confirmationNeeded = true;
+  let dialogs = 0, elicits = 0;
+  const { client } = await setup(t, { service, capabilities: { elicitation: { form: {} } },
+    elicit: () => { elicits++; return { action: "accept", content: { confirm: true } }; },
+    server: { showDialog: () => { dialogs++; return true; } } });
+  for (const tool of ["turnweft_ask", "turnweft_delegate"]) {
+    const r = await call(client, tool, { ...turn, nonInteractive: true });
+    assert.equal(r.data?.kind, "needs_confirmation"); assert.equal(r.data?.nextAction, "mark_blocked");
+    assert.equal(r.data?.grantCommand, "turnweft policy grant twp_proposal");
+    assert.match(r.warnings.join(" "), /continue independent work/);
+    assert.equal((await call(client, tool, { ...turn, providerEnv: { KEY: "secret" } })).error?.code, "invalid_arguments");
+  }
+  assert.equal((await call(client, "turnweft_session", { action: "create", provider: "agy", cwd: "/project", providerEnv: { KEY: "secret" } })).error?.code, "invalid_arguments");
+  assert.equal(dialogs, 0); assert.equal(elicits, 0); assert.equal(service.confirmations.length, 0);
+});
+
+test("U25: querying a fail-fast job never opens a dialog", async t => {
+  const service = new FakeService();
+  const original = service.getJob.bind(service);
+  service.getJob = async input => {
+    const view = await original(input);
+    return { ...view, job: { ...view.job, state: "waiting_confirmation", proposalId: proposal.proposalId, confirmationMode: "fail-fast" } };
+  };
+  let dialogs = 0;
+  const { client } = await setup(t, { service, server: { showDialog: () => { dialogs++; return true; } } });
+  const r = await call(client, "turnweft_job", { jobId: "twj_job" });
+  assert.equal(dialogs, 0); assert.match(r.warnings.join(" "), /Mark this task blocked/);
+});
+
+test("U25: user fail-fast config cannot be overridden by nonInteractive:false", async t => {
+  const { writeFileSync, rmSync } = await import("node:fs");
+  const file = joinPath(process.env.TURNWEFT_HOME!, "config.json");
+  writeFileSync(file, JSON.stringify({ confirmationMode: "fail-fast" }));
+  t.after(() => rmSync(file, { force: true }));
+  const service = new FakeService(); service.confirmationNeeded = true;
+  let dialogs = 0;
+  const { client } = await setup(t, { service, server: { showDialog: () => { dialogs++; return true; } } });
+  const r = await call(client, "turnweft_delegate", { ...turn, nonInteractive: false });
+  assert.equal(r.data?.nextAction, "mark_blocked"); assert.equal(dialogs, 0);
+});

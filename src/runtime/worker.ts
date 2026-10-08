@@ -7,6 +7,7 @@ import { getAdapter } from "../adapters/registry.js";
 import { AdapterError, type Adapter, type AdapterEvent, type Connection, type TierSpec } from "../adapters/types.js";
 import { loadConfig } from "./config.js";
 import { now } from "./ids.js";
+import { providerError } from "./secrets.js";
 import { capabilityDigest, matchPolicy } from "./policy.js";
 import { isOwnerGone, nativeStopped, ownerToken, stopAndConfirm } from "./proc.js";
 import { ensureWorkerFor } from "./spawn.js";
@@ -201,6 +202,11 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
       : "the U11 policy for this turn was revoked" });
     return "done";
   }
+  const submittedPolicy = job.policyId ? store.getPolicy(job.policyId) : undefined;
+  if (submittedPolicy?.expiresAt && Date.parse(submittedPolicy.expiresAt) <= Date.now() && !bypassValid) {
+    finish("failed", { errorCode: "policy_expired", failureReason: "the U11 policy expired before this queued job started; obtain a new terminal grant and submit a new request" });
+    return "done";
+  }
   const m = matchPolicy(store, { provider: session.provider, canonicalRoot: session.canonicalRoot, intent: job.intent, probe, tier });
   const matchedPolicyId = m.ok ? m.policy?.id : undefined;
   if (!m.ok && !bypassValid) {
@@ -268,7 +274,7 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
     } else if (cancelledBeforeDelivery()) {
       finish("cancelled", { failureReason: "cancelled before delivery" });
     } else {
-      finish("failed", { errorCode: code, failureReason: (e as Error).message });
+      finish("failed", { errorCode: code, failureReason: providerError((e as Error).message, session.provider) });
     }
     return "done";
   }
@@ -281,6 +287,12 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
 
   // Take the "before" snapshot ahead of delivery, so nothing changed after delivery is counted as pre-existing.
   const before = snapshot(session.canonicalRoot);
+  // Opening a provider may take time: a grant that expires during open must not deliver a prompt either.
+  const deliveryPolicy = matchedPolicyId ? store.getPolicy(matchedPolicyId) : undefined;
+  if (!bypassValid && deliveryPolicy?.expiresAt && Date.parse(deliveryPolicy.expiresAt) <= Date.now()) {
+    finish("failed", { errorCode: "policy_expired", failureReason: "the U11 policy expired before prompt delivery" });
+    return "done";
+  }
   // Finding 4: a cancel that arrived during open must win; never deliver a cancelled job.
   if (!store.fencedTransition(job.id, generation, ["starting"], "running", { deliveredAt: now() })) {
     if (cancelledBeforeDelivery()) finish("cancelled", { failureReason: "cancelled before delivery" });
@@ -375,7 +387,7 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
     if (timedOut) { state = "timed_out"; errorCode = "inactivity_timeout"; failureReason = "provider produced no activity within the inactivity timeout"; }
     else if (cancelRequested && lost) { state = "cancelled"; failureReason = "provider closed after cancel"; }
     else if (lost) { state = "in_doubt"; errorCode = "in_doubt"; failureReason = `${(error as Error).message}; the turn may have run. Not resent.`; }
-    else { state = "failed"; errorCode = (error as AdapterError).code ?? "provider_error"; failureReason = (error as Error).message; }
+    else { state = "failed"; errorCode = (error as AdapterError).code ?? "provider_error"; failureReason = providerError((error as Error).message, session.provider); }
   } else if (outcome!.stopReason === "cancelled") {
     state = timedOut ? "timed_out" : "cancelled";
     if (timedOut) errorCode = "inactivity_timeout";

@@ -40,7 +40,7 @@ export class AgyConnection implements Connection {
     if (input.effort !== undefined) { args.push("--effort", input.effort); this.launchEffort = input.effort; }
     if (input.nativeSessionId) args.push("--conversation", input.nativeSessionId);
     args.push("-p=");
-    this.proc = spawn(this.exe, args, { cwd: input.cwd, stdio: ["pipe", "pipe", "pipe"], detached: true, env: providerEnv(this.exe) });
+    this.proc = spawn(this.exe, args, { cwd: input.cwd, stdio: ["pipe", "pipe", "pipe"], detached: true, env: providerEnv(this.exe, undefined, undefined, "agy") });
     if (this.proc.pid) this.hooks.onSpawn?.(this.proc.pid); // record before waiting for init (round 3, finding 4)
     this.proc.on("exit", (code, signal) => { this.hasExited = true; this.exitResolve({ code, signal }); this.waiter?.({ exited: { code, signal } }); });
     this.proc.on("error", () => { /* surfaced via exited */ });

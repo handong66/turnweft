@@ -6,7 +6,20 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 
 ## [Unreleased]
 
+### Fixed
+
+- Probe dead project-lock owners outside SQLite write transactions, then fence reclamation against holder and lease changes (U24).
+
+### Changed
+
+- A fresh trusted host bypass retry can authorize its matching undelivered waiting job with the current capability digest, without confirming a shared proposal or reviving finished jobs.
+- Unattended hosts mark unauthorized tasks blocked, continue independent work, and report at the end; skills forbid intent downgrades, CLI fallback and agent edits to user config. `permissionTimeoutMs` remains reserved, not an implemented pending-action timer.
+- `turnweft doctor` reports every ignored `parallelWrites` entry and its reason.
+
 ### Added
+- Unattended confirmation mode (U25): user `confirmationMode: "fail-fast"`, MCP `nonInteractive: true`, and CLI `send --non-interactive` return a structured `needs_confirmation` proposal and terminal grant command without a dialog, waiting job, or queue entry. The default remains `wait`; false/absent call flags defer to user config.
+- User-only `providerEnv` supplies provider variables to probes and new processes in MCP, CLI and workers, with configured values redacted from persisted results/events and output.
+- Terminal pre-authorization: `policy grant --provider <id> --root <dir> --intent <intent> --until <ISO or HH:MM>` requires a TTY and manual yes. Expiry is checked at submit and before execution; already running jobs continue. Policy lists label expired grants.
 - User-only `parallelWrites` in `~/.turnweft/config.json` opts exact project roots into concurrent implement jobs. Default writes remain serialized; separate git worktrees are recommended for parallel writers. Shared/exclusive holds preserve exclusion across config changes and retain crash/frozen-provider recovery. Existing SQLite locks migrate as exclusive holders.
 - Overlapping write jobs report peer IDs in `concurrentWrites` and localized MCP/CLI warnings about overwritten changes and mixed-agent commits.
 

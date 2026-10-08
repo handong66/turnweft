@@ -9,6 +9,7 @@ import { AgyConnection } from "../adapters/agy.js";
 import { AdapterError, type TierSpec } from "../adapters/types.js";
 
 const dir = mkdtempSync(join(tmpdir(), "tw-fake-agy-"));
+process.env.TURNWEFT_HOME = dir;
 const exe = join(dir, "agy");
 writeFileSync(exe, `#!/bin/sh\nexec "${process.execPath}" "${fileURLToPath(new URL("./fake-agy.js", import.meta.url))}" "$@"\n`);
 chmodSync(exe, 0o755);

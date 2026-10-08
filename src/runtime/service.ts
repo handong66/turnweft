@@ -4,7 +4,7 @@ import { renderMessage } from "../core/i18n.js";
 import type { ConfirmPolicyInput, CreateSessionInput, GetJobInput, JobView, SubmitTurnInput, SubmitTurnOutcome, TurnweftService, UpdateSessionInput } from "../core/service.js";
 import { PROVIDERS, TERMINAL_JOB_STATES, type HostBinding, type Job, type PolicyProposal, type ProbeResult, type ProviderId, type Session, type UserPolicy } from "../core/types.js";
 import { getAdapter } from "../adapters/registry.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, nonInteractive } from "./config.js";
 import { newJobId, newSessionId, now, sha256 } from "./ids.js";
 import { buildProposal, capabilityDigest, confirm, matchPolicy, reject } from "./policy.js";
 import { ensureWorkerFor } from "./spawn.js";
@@ -113,7 +113,7 @@ export class LocalService implements TurnweftService {
     const digest = sha256(input.prompt);
     const existing = this.store.getJobByRequest(input.requestId);
     if (existing) {
-      if (existing.sessionId === input.sessionId && existing.intent === input.intent && existing.promptDigest === digest) return this.outcomeFor(existing);
+      if (existing.sessionId === input.sessionId && existing.intent === input.intent && existing.promptDigest === digest) return this.retryOutcome(existing, input);
       return { kind: "rejected", code: "request_conflict", message: "requestId was already used with different content" };
     }
     const s = this.store.getSession(input.sessionId);
@@ -146,6 +146,10 @@ export class LocalService implements TurnweftService {
     type Done = SubmitTurnOutcome | { kind: "dup" };
     const done: Done = this.store.tx((): Done => {
       this.store.expireStaleTx();
+      // Re-check duplicates before recording a proposal, including fail-fast submissions.
+      if (this.store.getJobByRequest(input.requestId)) return { kind: "dup" };
+      const current = this.store.getSession(s.id);
+      if (!current || current.state === "closed" || current.state === "broken") return { kind: "rejected", code: current?.state === "broken" ? "session_broken" : "session_closed", message: "session is closed or broken" };
       const m = matchPolicy(this.store, key);
       // U21: the host's bypass mode authorizes this one job; nothing is stored, so non-bypass conversations still ask.
       // It is kept even when a policy matches, so revoking that policy later does not undo it (round 11, 4), and it is
@@ -154,7 +158,10 @@ export class LocalService implements TurnweftService {
       const proposal = m.ok || bypass ? undefined : this.store.pendingProposalTx(
         { provider: s.provider, canonicalRoot: s.canonicalRoot, intent: input.intent, tier: tier.tier, capabilityDigest: capabilityDigest(s.provider, probe, tier) },
         () => buildProposal(key), { requestId: input.requestId, sessionId: s.id });
+      const failFast = nonInteractive(input.nonInteractive);
+      if (proposal && failFast) return { kind: "needs_confirmation", proposal, confirmationMode: "fail-fast" };
       const job: Job = {
+        confirmationMode: failFast ? "fail-fast" : "wait",
         id: newJobId(), sessionId: s.id, requestId: input.requestId, intent: input.intent, promptDigest: digest,
         state: proposal ? "waiting_confirmation" : "queued", policyId: m.ok ? m.policy?.id : undefined,
         proposalId: proposal?.proposalId, ...(bypass ? { hostBypass: bypass, hostBypassDigest: capabilityDigest(s.provider, probe, tier) } : {}), acceptedAt: now(),
@@ -169,11 +176,37 @@ export class LocalService implements TurnweftService {
     if (done.kind === "dup") {
       // Concurrent submit with the same requestId: only an identical request gets the winner (finding 12).
       const dup = this.store.getJobByRequest(input.requestId);
-      if (dup && dup.sessionId === input.sessionId && dup.intent === input.intent && dup.promptDigest === digest) return this.outcomeFor(dup);
+      if (dup && dup.sessionId === input.sessionId && dup.intent === input.intent && dup.promptDigest === digest) return this.retryOutcome(dup, input);
       return { kind: "rejected", code: "request_conflict", message: "requestId was already used with different content" };
     }
     if (done.kind === "accepted") this.ensureWorker(s.id);
     return done;
+  }
+
+  /** U25: a fresh trusted call can release only its matching, undelivered waiting job. */
+  private async retryOutcome(job: Job, input: SubmitTurnInput): Promise<SubmitTurnOutcome> {
+    const session = this.store.getSession(job.sessionId);
+    if (!session?.hostBindings.some(b => sameHost(b, input.host))) return { kind: "rejected", code: "not_attached", message: "this host is not bound to the session; call attach first" };
+    if (job.state === "waiting_confirmation" && input.hostBypass && session.state !== "closed" && session.state !== "broken") {
+      const probe = await this.probe(session.provider, true);
+      if (!probe.available) return { kind: "rejected", code: "provider_unavailable", message: probe.problems.join("; ") };
+      const tier = getAdapter(session.provider).tierFor(job.intent, probe);
+      const released = this.store.tx(() => {
+        this.store.expireStaleTx();
+        const cur = this.store.getJob(job.id);
+        const s = this.store.getSession(job.sessionId);
+        if (!cur || cur.state !== "waiting_confirmation" || cur.deliveredAt || cur.sessionId !== input.sessionId
+          || cur.requestId !== input.requestId || cur.intent !== input.intent || cur.promptDigest !== sha256(input.prompt)
+          || !s || s.state === "closed" || s.state === "broken") return false;
+        this.store.updateJob(cur.id, { state: "queued", hostBypass: input.hostBypass,
+          hostBypassDigest: capabilityDigest(session.provider, probe, tier),
+          confirmationMode: nonInteractive(input.nonInteractive) ? "fail-fast" : cur.confirmationMode });
+        this.store.appendEventTx(cur.id, "diagnostic", { authorizedBy: input.hostBypass, message: "fresh host bypass authorized this waiting job only" });
+        return true;
+      });
+      if (released) this.ensureWorker(job.sessionId);
+    }
+    return this.outcomeFor(job);
   }
 
   /** Outcome for an already-recorded job (idempotent resubmit). */
@@ -236,7 +269,7 @@ export class LocalService implements TurnweftService {
 
   async confirmPolicy(input: ConfirmPolicyInput): Promise<UserPolicy> {
     let r: ReturnType<typeof confirm>;
-    try { r = confirm(this.store, input.proposalId, input.nonce, input.via); }
+    try { r = confirm(this.store, input.proposalId, input.nonce, input.via, input.expiresAt); }
     catch (e) { throw new ServiceError((e as { code?: string }).code ?? "policy_error", (e as Error).message); }
     // Wake workers only after the decision and the releases are committed together.
     for (const sid of new Set(r.released.map((j) => j.sessionId))) this.ensureWorker(sid);
@@ -249,6 +282,19 @@ export class LocalService implements TurnweftService {
     catch (e) { throw new ServiceError((e as { code?: string }).code ?? "policy_error", (e as Error).message); }
     // A session whose head was cancelled may have queued turns behind it.
     for (const sid of new Set(r.cancelled.map((j) => j.sessionId))) this.ensureWorker(sid);
+  }
+
+  async proposePolicy(input: Parameters<TurnweftService["proposePolicy"]>[0]): Promise<PolicyProposal> {
+    if (!PROVIDERS.includes(input.provider) || !["analyze", "implement"].includes(input.intent)) throw new ServiceError("invalid_arguments", "invalid provider or intent");
+    const root = canonicalRoot(workingDir(input.root));
+    const probe = await this.probe(input.provider, true);
+    if (!probe.available) throw new ServiceError("provider_unavailable", probe.problems.join("; "));
+    const tier = getAdapter(input.provider).tierFor(input.intent, probe);
+    const key = { provider: input.provider, canonicalRoot: root, intent: input.intent, probe, tier };
+    return this.store.tx(() => {
+      this.store.expireStaleTx();
+      return this.store.pendingProposalTx({ ...key, tier: tier.tier, capabilityDigest: capabilityDigest(input.provider, probe, tier) }, () => buildProposal(key), {});
+    });
   }
 
   async listPolicies(f?: { canonicalRoot?: string; provider?: ProviderId }) { return this.store.listPolicies(f); }

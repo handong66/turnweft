@@ -50,7 +50,8 @@ export class PolicyError extends Error {
 }
 
 /** Confirm atomically with the release of every waiting job on the same key (round 5, 2). */
-export function confirm(store: Store, proposalId: string, nonce: string, via: UserPolicy["confirmedVia"]) {
+export function confirm(store: Store, proposalId: string, nonce: string, via: UserPolicy["confirmedVia"], expiresAt?: string) {
+  if (expiresAt && (via !== "cli-tty" || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now())) throw new PolicyError("invalid_expiry", "policy expiry must be in the future and granted in a terminal");
   try {
     return store.decideProposal({
       proposalId, nonce, decision: "confirmed", via,
@@ -59,7 +60,7 @@ export function confirm(store: Store, proposalId: string, nonce: string, via: Us
         return {
           id: newPolicyId(), provider: p.provider, canonicalRoot: p.canonicalRoot, intent: p.intent, tier: p.tier,
           excessOverGrant: p.excessOverGrant, cliVersion: p.cliVersion, adapterVersion: p.adapterVersion,
-          capabilityDigest: p.capabilityDigest, confirmedVia: via, confirmedAt: now(), revision: (prior?.revision ?? 0) + 1,
+          capabilityDigest: p.capabilityDigest, confirmedVia: via, confirmedAt: now(), ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}), revision: (prior?.revision ?? 0) + 1,
         };
       },
     });
@@ -70,4 +71,17 @@ export function confirm(store: Store, proposalId: string, nonce: string, via: Us
 export function reject(store: Store, proposalId: string, nonce: string, via: string) {
   try { return store.decideProposal({ proposalId, nonce, decision: "rejected", via }); }
   catch (e) { throw new PolicyError((e as { code?: string }).code ?? "policy_error", (e as Error).message); }
+}
+
+/** HH:MM means the next occurrence in the user's local timezone; ISO must include a timezone. */
+export function parsePolicyUntil(value: string, current = new Date()): string {
+  let end: Date;
+  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+    const [h, m] = value.split(":").map(Number);
+    end = new Date(current); end.setHours(h!, m!, 0, 0);
+    if (end.getTime() <= current.getTime()) end.setDate(end.getDate() + 1);
+  } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) end = new Date(value);
+  else throw new PolicyError("invalid_expiry", "--until requires HH:MM or an ISO timestamp with timezone");
+  if (!Number.isFinite(end.getTime()) || end.getTime() <= current.getTime()) throw new PolicyError("invalid_expiry", "--until must be in the future");
+  return end.toISOString();
 }

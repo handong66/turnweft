@@ -46,7 +46,7 @@ export const currentLanguage = createLanguageResolver();
 const messages = {
   zh: {
     concurrentWrites: "同一目录有其他写任务同时运行：{jobs}；改动可能互相覆盖，git 提交可能包含其他 Agent 的改动",
-    usage: "Turnweft\n  mcp                         启动 stdio MCP 服务\n  doctor | agents list        探测目标，不提交模型任务\n  session create --agent ID --cwd PATH [--name LABEL] [--model MODEL] [--effort LEVEL]\n  session list [--cwd PATH] [--agent ID] [--include-closed]\n  session get|attach ID\n  session update ID --effort LEVEL\n  session close ID [--policy reject_if_busy|cancel_running]\n  send --session ID [--intent analyze|implement] [--prompt-file FILE] [--request-id ID]\n                              未提供文件时从标准输入读取；默认意图为 analyze\n  job status|wait|result ID [--wait-ms MS] [--after-seq N] [--include-result]\n                           [--result-offset N] [--result-limit N]\n                              最多等待 25000 ms；其他查询立即返回\n  cancel ID\n  policy list [--cwd PATH] [--agent ID]\n  policy revoke ID\n  policy grant PROPOSAL_ID     需要标准输入、输出为终端，并手动输入 yes\n  所有命令接受 --json；mcp 标准输出始终为 MCP 协议流。\n",
+    usage: "Turnweft\n  mcp                         启动 stdio MCP 服务\n  doctor | agents list        探测目标，不提交模型任务\n  session create --agent ID --cwd PATH [--name LABEL] [--model MODEL] [--effort LEVEL]\n  session list [--cwd PATH] [--agent ID] [--include-closed]\n  session get|attach ID\n  session update ID --effort LEVEL\n  session close ID [--policy reject_if_busy|cancel_running]\n  send --session ID [--intent analyze|implement] [--prompt-file FILE] [--request-id ID] [--non-interactive]\n                              未提供文件时从标准输入读取；默认意图为 analyze\n  job status|wait|result ID [--wait-ms MS] [--after-seq N] [--include-result]\n                           [--result-offset N] [--result-limit N]\n                              最多等待 25000 ms；其他查询立即返回\n  cancel ID\n  policy list [--cwd PATH] [--agent ID]\n  policy revoke ID\n  policy grant --provider ID --root PATH --intent analyze|implement --until TIME\n  policy grant PROPOSAL_ID [--until TIME]     需要标准输入、输出为终端，并手动输入 yes\n  所有命令接受 --json；mcp 标准输出始终为 MCP 协议流。\n",
     cancelled: "输入已关闭或确认已取消；未授予权限",
     declined: "未授予权限；任务继续等待",
     denied: "已拒绝；等待这次确认的任务已取消",
@@ -71,7 +71,7 @@ const messages = {
     implement: "修改代码（implement）",
     analyze: "只读分析（analyze）",
     unknownVersion: "版本未知",
-    proposal: "Turnweft 需要你确认一次：允许 {provider}（{version}）在项目 {root} 中以「{tier}」档位{intent}。\n这个档位比当前授权多出：\n- {excess}\n确认后任务会自动开始；同一项目、同一 Agent、同一意图不再询问；Agent 版本或档位语义变化时会重新确认。",
+    proposal: "Turnweft 需要你确认一次：允许 {provider}（{version}）在项目 {root} 中以「{tier}」档位{intent}。\n这个档位比当前授权多出：\n- {excess}\n确认后等待中的任务自动开始；fail-fast 提交需要重新提交；同一项目、同一 Agent、同一意图不再询问；Agent 版本或档位语义变化时会重新确认。",
     deny: "拒绝",
     allow: "允许",
     dialog: "提案 {id}。这个对话框会一直等你选择（提案 {expires} 过期）；也可以在终端运行 turnweft policy grant {id}。",
@@ -81,7 +81,7 @@ const messages = {
   },
   en: {
     concurrentWrites: "Other write jobs ran concurrently in the same directory: {jobs}; changes may overwrite each other, and git commits may include another agent's changes.",
-    usage: "Turnweft\n  mcp                         Start the stdio MCP server\n  doctor | agents list        Probe targets without submitting a model task\n  session create --agent ID --cwd PATH [--name LABEL] [--model MODEL] [--effort LEVEL]\n  session list [--cwd PATH] [--agent ID] [--include-closed]\n  session get|attach ID\n  session update ID --effort LEVEL\n  session close ID [--policy reject_if_busy|cancel_running]\n  send --session ID [--intent analyze|implement] [--prompt-file FILE] [--request-id ID]\n                              Otherwise read the prompt from stdin; intent defaults to analyze\n  job status|wait|result ID [--wait-ms MS] [--after-seq N] [--include-result]\n                           [--result-offset N] [--result-limit N]\n                              Waits are capped at 25000 ms; other queries return immediately\n  cancel ID\n  policy list [--cwd PATH] [--agent ID]\n  policy revoke ID\n  policy grant PROPOSAL_ID     Requires stdin and stdout TTY and manual yes\n  All commands accept --json; mcp stdout remains the MCP protocol stream.\n",
+    usage: "Turnweft\n  mcp                         Start the stdio MCP server\n  doctor | agents list        Probe targets without submitting a model task\n  session create --agent ID --cwd PATH [--name LABEL] [--model MODEL] [--effort LEVEL]\n  session list [--cwd PATH] [--agent ID] [--include-closed]\n  session get|attach ID\n  session update ID --effort LEVEL\n  session close ID [--policy reject_if_busy|cancel_running]\n  send --session ID [--intent analyze|implement] [--prompt-file FILE] [--request-id ID] [--non-interactive]\n                              Otherwise read the prompt from stdin; intent defaults to analyze\n  job status|wait|result ID [--wait-ms MS] [--after-seq N] [--include-result]\n                           [--result-offset N] [--result-limit N]\n                              Waits are capped at 25000 ms; other queries return immediately\n  cancel ID\n  policy list [--cwd PATH] [--agent ID]\n  policy revoke ID\n  policy grant --provider ID --root PATH --intent analyze|implement --until TIME\n  policy grant PROPOSAL_ID [--until TIME]     Requires stdin and stdout TTY and manual yes\n  All commands accept --json; mcp stdout remains the MCP protocol stream.\n",
     cancelled: "Input closed or confirmation was cancelled; policy was not granted",
     declined: "Policy was not granted; jobs keep waiting",
     denied: "Denied; jobs waiting for this confirmation were cancelled",
@@ -106,7 +106,7 @@ const messages = {
     implement: "modify code (implement)",
     analyze: "perform read-only analysis (analyze)",
     unknownVersion: "unknown version",
-    proposal: "Turnweft needs your one-time confirmation: allow {provider} ({version}) to {intent} in project {root} using tier \"{tier}\".\nThis tier exceeds the current grant by:\n- {excess}\nThe task starts automatically after confirmation. You will not be asked again for the same project, agent and intent; changes to the agent version or tier semantics require confirmation again.",
+    proposal: "Turnweft needs your one-time confirmation: allow {provider} ({version}) to {intent} in project {root} using tier \"{tier}\".\nThis tier exceeds the current grant by:\n- {excess}\nWaiting tasks start automatically after confirmation; a fail-fast submission must be resubmitted. You will not be asked again for the same project, agent and intent; changes to the agent version or tier semantics require confirmation again.",
     deny: "Deny",
     allow: "Allow",
     dialog: "Proposal {id}. This dialog waits for your choice (the proposal expires at {expires}); you can also run turnweft policy grant {id} in a terminal.",

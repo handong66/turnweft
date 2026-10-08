@@ -16,6 +16,9 @@ import { boundedWait, confirmationRequired, startMcpServer } from "../mcp/server
 import { failure, jobWarnings, serviceFailure, success } from "../mcp/envelope.js";
 import { macosConfirm, spawnDialogHelper, type NativeConfirm } from "../mcp/native-dialog.js";
 import { ownerToken, stopAndConfirm } from "../runtime/proc.js";
+import { redact } from "../runtime/secrets.js";
+import { parsePolicyUntil } from "../runtime/policy.js";
+import { loadConfig, nonInteractive } from "../runtime/config.js";
 import { createService } from "../runtime/factory.js";
 
 export interface CliIO {
@@ -25,6 +28,8 @@ export interface CliIO {
 }
 
 const options = {
+  provider: { type: "string" }, root: { type: "string" }, until: { type: "string" },
+  "non-interactive": { type: "boolean" },
   json: { type: "boolean" }, help: { type: "boolean", short: "h" },
   agent: { type: "string" }, cwd: { type: "string" }, name: { type: "string" }, model: { type: "string" }, effort: { type: "string" },
   session: { type: "string" }, intent: { type: "string" }, "prompt-file": { type: "string" }, "request-id": { type: "string" },
@@ -48,6 +53,7 @@ function human(data: unknown): string {
 }
 
 function output(io: CliIO, envelope: Envelope<unknown>, json: boolean): number {
+  envelope = redact(envelope);
   if (json) io.stdout.write(`${JSON.stringify(envelope)}\n`);
   else {
     (envelope.ok ? io.stdout : io.stderr).write(`${envelope.ok ? human(envelope.data) : `${envelope.error?.code}: ${envelope.error?.message}`}\n`);
@@ -65,6 +71,7 @@ function output(io: CliIO, envelope: Envelope<unknown>, json: boolean): number {
 export async function runDialog(service: TurnweftService, proposalId: string, io: Pick<CliIO, "stderr">,
   confirm: NativeConfirm = macosConfirm, pollMs = 2000): Promise<number> {
   const logLine = (msg: string) => {
+    msg = redact(msg);
     try {
       const dir = join(process.env.TURNWEFT_HOME ?? join(homedir(), ".turnweft"), "logs");
       mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -171,7 +178,7 @@ export async function runCli(
         }
         break;
       case "send":
-        only(["session", "intent", "prompt-file", "request-id"], 1);
+        only(["session", "intent", "prompt-file", "request-id", "non-interactive"], 1);
         required(values.session, "--session");
         if (values.intent !== undefined && !["analyze", "implement"].includes(values.intent)) throw new Error("Invalid --intent");
         if (values["request-id"] !== undefined) required(values["request-id"], "--request-id");
@@ -187,7 +194,14 @@ export async function runCli(
       case "cancel": only([], 2); required(action, "jobId"); break;
       case "policy":
         if (action === "list") { only(["cwd", "agent"], 2); agent(); }
-        else if (action === "revoke" || action === "grant") { only([], 3); required(id, "policy/proposal ID"); }
+        else if (action === "grant" && !id) {
+          only(["provider", "root", "intent", "until"], 2);
+          if (!PROVIDERS.includes(values.provider as ProviderId)) throw new Error("Invalid --provider");
+          required(values.root, "--root");
+          if (!["analyze", "implement"].includes(values.intent ?? "")) throw new Error("Invalid --intent");
+          parsePolicyUntil(required(values.until, "--until"));
+        }
+        else if (action === "revoke" || action === "grant") { only(action === "grant" ? ["until"] : [], 3); required(id, "policy/proposal ID"); if (values.until) parsePolicyUntil(values.until); }
         else throw new Error("Expected policy list|revoke|grant");
         if (action === "grant" && (!io.stdin.isTTY || !io.stdout.isTTY)) return output(io, failure("tty_required", "policy grant requires stdin and stdout to be TTY; open a terminal and type yes manually"), json);
         break;
@@ -199,7 +213,9 @@ export async function runCli(
     switch (command) {
       case "mcp": await startMcpServer(service); return 0;
       case "dialog": return await runDialog(service, action!, io);
-      case "doctor": case "agents": envelope = success(await service.listAgents({ refresh: values.refresh })); break;
+      case "doctor": envelope = success(await service.listAgents({ refresh: values.refresh }),
+        (loadConfig().ignoredParallelWrites ?? []).map(x => `Ignored parallelWrites entry ${JSON.stringify(x.entry)}: ${x.reason}`)); break;
+      case "agents": envelope = success(await service.listAgents({ refresh: values.refresh })); break;
       case "session":
         switch (action) {
           case "create": envelope = success(await service.createSession({ provider: agent()!, cwd: values.cwd!, name: values.name, model: values.model, effort: values.effort, host })); break;
@@ -222,12 +238,16 @@ export async function runCli(
         if (values["prompt-file"] !== undefined) prompt = await readFile(values["prompt-file"], "utf8");
         else { for await (const chunk of io.stdin) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); prompt = Buffer.concat(chunks).toString("utf8"); }
         required(prompt, "prompt");
-        const outcome = await service.submitTurn({ sessionId: values.session!, prompt, requestId, intent: (values.intent ?? "analyze") as Intent, host });
-        if (outcome.kind === "awaiting_confirmation") hooks.showDialog?.(outcome.proposal.proposalId);
+        const outcome = await service.submitTurn({ sessionId: values.session!, prompt, requestId, intent: (values.intent ?? "analyze") as Intent, host, ...(values["non-interactive"] ? { nonInteractive: true } : {}) });
+        if (outcome.kind === "awaiting_confirmation" && !nonInteractive(values["non-interactive"])) hooks.showDialog?.(outcome.proposal.proposalId);
+        if (outcome.kind === "awaiting_confirmation" && nonInteractive(values["non-interactive"])) {
+          envelope = confirmationRequired(outcome.proposal, `Existing wait-mode job ${outcome.job.id} remains waiting until confirmed, cancelled, or expired.`, true);
+          break;
+        }
         envelope = outcome.kind === "accepted" ? success({ ...outcome, requestId, jobId: outcome.job.id, nextAction: "wait" })
           : outcome.kind === "awaiting_confirmation" ? success({ kind: "awaiting_confirmation", requestId, jobId: outcome.job.id, nextAction: "wait" },
               [text("waitingJob", { id: outcome.job.id, proposal: outcome.proposal.proposalId })])
-          : outcome.kind === "needs_confirmation" ? success({ ...confirmationRequired(outcome.proposal).data, requestId }, confirmationRequired(outcome.proposal).warnings)
+          : outcome.kind === "needs_confirmation" ? success({ ...confirmationRequired(outcome.proposal, undefined, outcome.confirmationMode === "fail-fast" || nonInteractive(values["non-interactive"])).data, requestId }, confirmationRequired(outcome.proposal, undefined, outcome.confirmationMode === "fail-fast" || nonInteractive(values["non-interactive"])).warnings)
           : { ...failure(outcome.code, outcome.message), error: { code: outcome.code, message: outcome.message, details: { requestId } } };
         break;
       }
@@ -237,10 +257,12 @@ export async function runCli(
       }
       case "cancel": envelope = success(await service.cancelJob(action!)); break;
       case "policy":
-        if (action === "list") envelope = success(await service.listPolicies({ canonicalRoot: values.cwd, provider: agent() }));
+        if (action === "list") envelope = success((await service.listPolicies({ canonicalRoot: values.cwd, provider: agent() })).map(p => ({ ...p,
+          status: p.revokedAt ? "revoked" : p.expiresAt && Date.parse(p.expiresAt) <= Date.now() ? "expired" : "active" })));
         else if (action === "revoke") envelope = success(await service.revokePolicy(id!));
         else {
-          const proposal = await service.getProposal(id!);
+          const expiresAt = values.until ? parsePolicyUntil(values.until) : undefined;
+          const proposal = id ? await service.getProposal(id) : await service.proposePolicy({ provider: values.provider as ProviderId, root: values.root!, intent: values.intent as Intent });
           if (!proposal) return output(io, failure("proposal_not_found", `Proposal not found: ${id}`), json);
           // With --json, stdout still contains exactly one Envelope; the trusted prompt is on stderr.
           const terminal = json ? io.stderr : io.stdout;
@@ -250,6 +272,7 @@ export async function runCli(
             expires: proposal.expiresAt, id: proposal.proposalId, version: proposal.cliVersion,
             adapter: proposal.adapterVersion, digest: proposal.capabilityDigest,
           })}`);
+          if (expiresAt) terminal.write(`\nPolicy expires at: ${expiresAt}. Running jobs are not stopped at expiry.\n`);
           const reader = createInterface({ input: io.stdin, output: terminal, terminal: false });
           const controller = new AbortController();
           reader.once("close", () => controller.abort());
@@ -258,7 +281,7 @@ export async function runCli(
           catch { return output(io, failure("confirmation_cancelled", text("cancelled")), json); }
           finally { reader.close(); }
           if (answer === "yes") {
-            const policy = await service.confirmPolicy({ proposalId: proposal.proposalId, nonce: proposal.nonce, via: "cli-tty" });
+            const policy = await service.confirmPolicy({ proposalId: proposal.proposalId, nonce: proposal.nonce, via: "cli-tty", ...(expiresAt ? { expiresAt } : {}) });
             envelope = success(json ? policy : text("confirmed", { provider: policy.provider, intent: policy.intent, tier: policy.tier, root: policy.canonicalRoot, id: policy.id }));
           } else if (answer === "no") {
             // Explicit denial: jobs waiting on this proposal are cancelled (U19).

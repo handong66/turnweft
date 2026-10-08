@@ -11,6 +11,9 @@ const alive = () => false;
 const gone = () => true;
 function fixture(t: import("node:test").TestContext) {
   const home = mkdtempSync(join(tmpdir(), "tw-locks-"));
+  const previous = process.env.TURNWEFT_HOME;
+  process.env.TURNWEFT_HOME = home;
+  t.after(() => { if (previous === undefined) delete process.env.TURNWEFT_HOME; else process.env.TURNWEFT_HOME = previous; });
   const path = join(home, "state.sqlite");
   const store = new Store(path);
   t.after(() => { store.close(); rmSync(home, { recursive: true, force: true }); });
@@ -113,7 +116,22 @@ test("U24: legacy SQLite migration preserves locks as exclusive and is repeatabl
       assert.equal(reopened.getJob("a")?.state, "queued");
       assert.equal(reopened.projectLockHolders(home)[0]?.mode, "exclusive");
       assert.equal(reopened.acquireProjectLock(home, "b", 1, "b", alive, gone, "shared"), false);
-      assert.equal(reopened.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get()?.value, "2");
+      assert.equal(reopened.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get()?.value, "3");
     } finally { reopened.close(); }
   }
+});
+
+test("R1: owner/native probes run outside the transaction and changed leases fence reclamation", t => {
+  const { store, home, lock } = fixture(t);
+  store.claimLease("a", 1, "a", gone);
+  store.setLeaseNative("a", "a", 2, "native-a");
+  assert.equal(lock("a", "shared"), true);
+  let probes = 0;
+  const probe = () => { assert.equal(store.db.isTransaction, false); probes++; return true; };
+  assert.equal(lock("b", "exclusive", probe, () => {
+    probe(); store.setLeaseNative("a", "a", 3, "replacement"); return true;
+  }), false);
+  assert.equal(store.projectLockHolders(home)[0]?.jobId, "a");
+  assert.equal(lock("b", "exclusive", probe, probe), true);
+  assert.equal(probes, 4);
 });

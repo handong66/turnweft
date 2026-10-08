@@ -1,3 +1,5 @@
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { after } from "node:test";
 import { text as messageText } from "../core/i18n.js";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -19,6 +21,9 @@ function harness(input = "", tty = false, stdoutTTY = tty) {
 }
 
 process.env.TURNWEFT_LANG = "en";
+const testHome = mkdtempSync(join(tmpdir(), "tw-cli-test-"));
+process.env.TURNWEFT_HOME = testHome;
+after(() => rmSync(testHome, { recursive: true, force: true }));
 
 test("policy grant requires both stdin and stdout TTY before service initialization", async () => {
   for (const [inputTTY, outputTTY] of [[false, false], [false, true], [true, false]]) {
@@ -282,5 +287,38 @@ test("U24: CLI rejects per-task parallelWrites and renders overlap warnings in h
     assert.equal(await runCli(["job", "result", "twj_job", ...(json ? ["--json"] : [])], service, h.io), 0);
     if (json) assert.match(h.envelope().warnings[0], /twj_other.*overwrite/);
     else assert.match(h.stderr(), /twj_other.*overwrite/);
+  }
+});
+
+
+test("R2: doctor explains each ignored parallelWrites entry", async () => {
+  const file = join(testHome, "file"); writeFileSync(file, "x");
+  writeFileSync(join(testHome, "config.json"), JSON.stringify({ parallelWrites: ["relative", 42, file, join(testHome, "missing"), testHome] }));
+  try {
+    const h = harness();
+    await runCli(["doctor", "--json"], new FakeService(), h.io);
+    const warnings = h.envelope().warnings;
+    assert.equal(warnings.length, 4);
+    for (const reason of ["not an absolute path", "not a string", "not a directory", "missing or inaccessible path"]) assert.ok(warnings.some((x: string) => x.includes(reason)));
+  } finally { rmSync(join(testHome, "config.json")); }
+});
+
+test("U25: non-interactive CLI forwards only do-not-wait and never opens a dialog", async () => {
+  const h = harness("hello"); const service = new FakeService(); service.confirmationNeeded = true;
+  let dialogs = 0;
+  assert.equal(await runCli(["send", "--session", "s", "--non-interactive", "--json"], service, h.io, { showDialog: () => { dialogs++; return true; } }), 0);
+  assert.equal(service.submissions[0]?.nonInteractive, true);
+  assert.equal(service.submissions[0]?.hostBypass, undefined);
+  assert.equal(h.envelope().data.kind, "needs_confirmation"); assert.equal(dialogs, 0);
+});
+
+test("U25: pre-authorization requires TTY, rejects auto-yes and unbounded scope before initialization", async () => {
+  const args = ["policy", "grant", "--provider", "agy", "--root", "/project", "--intent", "implement", "--until", "23:59", "--json"];
+  for (const [tty, extra] of [[false, []], [true, ["--yes"]], [true, ["--all-projects"]]] as const) {
+    const h = harness("yes\n", tty);
+    let loaded = false;
+    assert.equal(await runCli([...args, ...extra], async () => { loaded = true; throw new Error("must not initialize"); }, h.io), 1);
+    assert.equal(loaded, false);
+    if (!tty) assert.equal(h.envelope().error.code, "tty_required");
   }
 });

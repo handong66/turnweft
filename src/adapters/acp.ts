@@ -3,9 +3,11 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import { ClientSideConnection, ndJsonStream, type Agent, type Client } from "@agentclientprotocol/sdk";
 import { AdapterError, type AdapterEvent, type ConnectHooks, type Connection, type OpenInput, type OpenResult, type PermissionKind, type PromptOutcome, type TierSpec } from "./types.js";
+import type { ProviderId } from "../core/types.js";
 import { providerEnv } from "./env.js";
 
 export interface AcpProfile {
+  provider?: ProviderId;
   command: string;
   args: string[];
   /** Config options to set for a tier, in order, e.g. [["permission", "workspace-write"]]. */
@@ -60,7 +62,7 @@ export class AcpConnection implements Connection {
   hasExited = false;
 
   constructor(private profile: AcpProfile, cwd: string, hooks: ConnectHooks = {}) {
-    this.proc = spawn(profile.command, profile.args, { cwd, stdio: ["pipe", "pipe", "pipe"], detached: true, env: providerEnv(profile.command) });
+    this.proc = spawn(profile.command, profile.args, { cwd, stdio: ["pipe", "pipe", "pipe"], detached: true, env: providerEnv(profile.command, undefined, undefined, profile.provider) });
     if (this.proc.pid) hooks.onSpawn?.(this.proc.pid);
     this.exited = new Promise((r) => this.proc.on("exit", (code, signal) => { this.hasExited = true; r({ code, signal }); }));
     this.proc.on("error", () => { /* surfaced through exited / request failures */ });

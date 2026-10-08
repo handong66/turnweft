@@ -204,6 +204,8 @@ Agent 的模式超出你的授权时，任务先记为 `waiting_confirmation`（
 ```json
 {
   "language": "zh",
+  "confirmationMode": "wait",
+  "providerEnv": { "agy": { "API_KEY": "your-provider-value" } },
   "executables": { "droid": "/custom/path/droid" },
   "idleReleaseMs": 600000,
   "inactivityTimeoutMs": 600000
@@ -217,9 +219,25 @@ Agent 的模式超出你的授权时，任务先记为 `waiting_confirmation`（
 - **`executables`**：指定各 Agent 命令行工具的路径。
   - 不指定时，先在 `PATH` 里找，再依次找 `~/.local/bin`、`/opt/homebrew/bin`、`/usr/local/bin`。
   - OpenCode 还会找 `~/.opencode/bin`，Dim 还会找 DimAgent.app 内置的 `dim`。
-- **`parallelWrites`** 是绝对项目目录数组，仅接受用户配置文件。路径先解析符号链接并规范化，再与会话 canonical root 精确匹配；不会递归匹配其他 canonical root（含嵌套 worktree）。同一 Git 根目录下的子目录会话共用该根目录的设置。相对路径、非字符串、不存在或非目录的条目被忽略。不能通过 MCP 参数、任务 CLI 标志或项目文件设置。每次尝试取锁都重新读取配置：已运行任务保留原共享／独占锁直到释放；独占任务等所有持有者退出，共享任务等独占持有者退出。
+- **`confirmationMode`**：`"wait"`（默认）或 `"fail-fast"`。长时间或无人值守任务可用 fail-fast，或在 MCP ask/delegate 传 `nonInteractive: true`，在 `turnweft send` 加 `--non-interactive`。true 一律不等待；false／省略沿用配置，不能强制覆盖 fail-fast。缺少授权时返回 `needs_confirmation`，包含 provider、项目、intent、tier、超出能力列表和准确的 `grantCommand`；不弹窗、不发 elicitation、不创建任务或队列项、不发送 provider。提案保留至多 24 小时。宿主将任务标记为受阻，继续独立工作，最后汇报；不得擅自降级 intent 或改走 CLI。用户确认后用同一个 requestId 重试。原有 wait 模式任务仍保留队列位置，直到确认、取消或过期；改配置不会取消它们。
+- **`providerEnv`**：provider ID 到字符串环境变量表的映射，覆盖该 provider 继承的变量，再补齐可执行文件／Node 的 PATH。示例变量名仅作说明，应使用 provider 实际要求的名称。GUI 启动的 MCP 缺 API key、base URL 时由用户设置此项，无需 CLI fallback。每次 probe 或启动 provider 进程读取，包括已运行 worker 的后续启动；已有 provider 进程须重新打开才使用新环境。Agent 列表 probe 可能缓存 60 秒，可用 `agents list --refresh` 刷新。环境值不写入记录或诊断，回显值会在结果、事件和输出中遮蔽。只有用户能编辑此文件，Agent 绝不能代改；工具参数和项目文件不能设置。
+- **`parallelWrites`** 是绝对项目目录数组，仅接受用户配置文件。路径先解析符号链接并规范化，再与会话 canonical root 精确匹配；不会递归匹配其他 canonical root（含嵌套 worktree）。同一 Git 根目录下的子目录会话共用该根目录的设置。相对路径、非字符串、不存在或非目录的条目被忽略，`turnweft doctor` 会逐项列出原因。不能通过 MCP 参数、任务 CLI 标志或项目文件设置。每次尝试取锁都重新读取配置：已运行任务保留原共享／独占锁直到释放；独占任务等所有持有者退出，共享任务等独占持有者退出。
 - **`idleReleaseMs`**：Agent 空闲多久后停掉，默认 10 分钟。
 - **`inactivityTimeoutMs`**：一轮任务里 Agent 多久没有任何动静就取消，默认 10 分钟。
+
+升级本运行时后，使用限时授权前须先结束旧版本 worker。状态库 schema 3 阻止旧运行时重新打开数据库；已经载入内存的旧 worker 代码无法热更新。
+
+## 无人值守前的限时授权
+
+离开前由用户本人在终端运行：
+
+```bash
+turnweft policy grant --provider agy --root . --intent implement --until 08:00
+```
+
+查看与对话框相同的项目、tier 和超出能力，手动输入 `yes`。`--until` 接受未来的带时区 ISO 时间，或本地时区下一次 HH:MM。标准输入与输出都必须是 TTY；不接受自动同意参数或全项目范围。无需预先提交任务即可创建普通 U11 policy。提交与执行前都检查过期：排队任务过期后以 `policy_expired` 失败，不发送 prompt；已运行任务不被终止。`policy list` 标出 expired。`policy grant <proposalId>` 也可加 `--until`。
+
+同 requestId／会话／intent／prompt 的 MCP 重试若携带新的可信宿主 bypass，只释放那个尚未投递的等待任务，并绑定当前能力指纹；不确认共享提案，不释放其他任务。已结束、过期、已投递及 `in_doubt` 任务不会复活或重发。“不要等待”从来不代表授权。
 
 ## 命令行
 

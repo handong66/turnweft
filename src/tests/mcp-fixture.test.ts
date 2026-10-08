@@ -61,6 +61,7 @@ export class FakeService implements TurnweftService {
   async releaseConfirmationDialog(id: string, token: string) { this.record("releaseConfirmationDialog", { id, token }); }
   async recordConfirmationDialogChild(id: string, token: string, pid: number) { this.record("recordConfirmationDialogChild", { id, token, pid }); }
   async rejectPolicy(input: ConfirmPolicyInput) { this.record("rejectPolicy", input); this.rejections.push(input); }
+  async proposePolicy(input: Parameters<TurnweftService["proposePolicy"]>[0]) { this.record("proposePolicy", input); return proposal; }
   async listPolicies(filter?: Parameters<TurnweftService["listPolicies"]>[0]) { this.record("listPolicies", filter); return [policy]; }
   async revokePolicy(id: string) { this.record("revokePolicy", id); return { ...policy, revokedAt: "now" }; }
   async getProposal(id: string) { this.record("getProposal", id); return this.foundProposal; }

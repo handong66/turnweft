@@ -8,9 +8,10 @@ import type {
   SessionState, TurnEvent, UserPolicy, EventType, AgentCapabilities,
 } from "../core/types.js";
 import { dbPath } from "./paths.js";
+import { redact } from "./secrets.js";
 import { now } from "./ids.js";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const TERMINAL = new Set<JobState>(["succeeded", "failed", "cancelled", "timed_out", "in_doubt"]);
 
 const DDL = `
@@ -68,6 +69,7 @@ function rowToJob(r: Row): Job {
     ownerGeneration: n(r.owner_generation), acceptedAt: String(r.accepted_at), deliveredAt: s(r.delivered_at),
     startedAt: s(r.started_at), finishedAt: s(r.finished_at),
     concurrentWrites: j<string[]>(r.concurrent_writes),
+    confirmationMode: r.confirmation_mode === "fail-fast" ? "fail-fast" : "wait",
   };
 }
 
@@ -77,7 +79,7 @@ function rowToPolicy(r: Row): UserPolicy {
     intent: r.intent as Intent, tier: String(r.tier), excessOverGrant: j<string[]>(r.excess) ?? [],
     cliVersion: String(r.cli_version), adapterVersion: String(r.adapter_version),
     capabilityDigest: String(r.capability_digest), confirmedVia: r.confirmed_via as UserPolicy["confirmedVia"],
-    confirmedAt: String(r.confirmed_at), revision: Number(r.revision), revokedAt: s(r.revoked_at),
+    confirmedAt: String(r.confirmed_at), revision: Number(r.revision), revokedAt: s(r.revoked_at), expiresAt: s(r.expires_at),
   };
 }
 
@@ -152,6 +154,8 @@ export class Store {
     if (!cols("sessions").has("requested_effort")) this.db.exec("ALTER TABLE sessions ADD COLUMN requested_effort TEXT");
     if (!cols("jobs").has("proposal_id")) this.db.exec("ALTER TABLE jobs ADD COLUMN proposal_id TEXT");
     for (const c of ["host_bypass", "host_bypass_digest"]) if (!cols("jobs").has(c)) this.db.exec(`ALTER TABLE jobs ADD COLUMN ${c} TEXT`);
+    if (!cols("jobs").has("confirmation_mode")) this.db.exec("ALTER TABLE jobs ADD COLUMN confirmation_mode TEXT");
+    if (!cols("policies").has("expires_at")) this.db.exec("ALTER TABLE policies ADD COLUMN expires_at TEXT");
     const pc = cols("proposals");
     for (const c of ["pkey", "decision", "decided_at", "dialog_token", "dialog_child"]) if (!pc.has(c)) this.db.exec(`ALTER TABLE proposals ADD COLUMN ${c} TEXT`);
     this.backfillProposalKeys();
@@ -247,9 +251,9 @@ export class Store {
   // ------------------------------------------------------------ jobs
   insertJob(x: Job & { prompt: string }) {
     this.db.prepare(`INSERT INTO jobs (id, session_id, request_id, intent, prompt, prompt_digest, state, grant_revision,
-      policy_id, proposal_id, host_bypass, host_bypass_digest, accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      policy_id, proposal_id, host_bypass, host_bypass_digest, accepted_at, confirmation_mode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(x.id, x.sessionId, x.requestId, x.intent, x.prompt, x.promptDigest, x.state, x.grantRevision ?? null,
-        x.policyId ?? null, x.proposalId ?? null, x.hostBypass ?? null, x.hostBypassDigest ?? null, x.acceptedAt);
+        x.policyId ?? null, x.proposalId ?? null, x.hostBypass ?? null, x.hostBypassDigest ?? null, x.acceptedAt, x.confirmationMode ?? "wait");
   }
 
   /** Insert only if the session is still open, inside the write lock (submit vs close race). */
@@ -289,6 +293,7 @@ export class Store {
 
   updateJob(id: string, patch: Partial<Omit<Job, "id" | "sessionId" | "requestId" | "intent" | "promptDigest" | "acceptedAt">>) {
     const map: Record<string, string> = {
+      hostBypass: "host_bypass", hostBypassDigest: "host_bypass_digest", confirmationMode: "confirmation_mode",
       state: "state", failureReason: "failure_reason", errorCode: "error_code", grantRevision: "grant_revision",
       policyId: "policy_id", proposalId: "proposal_id", ownerGeneration: "owner_generation", deliveredAt: "delivered_at",
       startedAt: "started_at", finishedAt: "finished_at",
@@ -296,7 +301,7 @@ export class Store {
     const cols: string[] = []; const args: (string | number | null)[] = [];
     for (const [k, v] of Object.entries(patch)) {
       const c = map[k]; if (!c) continue;
-      cols.push(`${c} = ?`); args.push((v as string | number | undefined) ?? null);
+      cols.push(`${c} = ?`); args.push(((k === "failureReason" ? redact(v) : v) as string | number | undefined) ?? null);
     }
     if (cols.length) this.db.prepare(`UPDATE jobs SET ${cols.join(", ")} WHERE id = ?`).run(...args, id);
   }
@@ -344,12 +349,12 @@ export class Store {
       const cur = this.getJob(id);
       if (!cur || cur.ownerGeneration !== generation || TERMINAL.has(cur.state)) return false;
       if (!this.leaseIs(cur.sessionId, generation)) return false;
-      if (result) this.db.prepare("UPDATE jobs SET result = ? WHERE id = ?").run(JSON.stringify({ ...result, concurrentWrites: cur.concurrentWrites }), id);
+      if (result) this.db.prepare("UPDATE jobs SET result = ? WHERE id = ?").run(JSON.stringify(redact({ ...result, concurrentWrites: cur.concurrentWrites })), id);
       this.updateJob(id, { ...extra, state, finishedAt: now() });
       const r = this.db.prepare("SELECT next_seq FROM jobs WHERE id = ?").get(id) as Row;
       const seq = Number(r.next_seq);
       this.db.prepare("INSERT INTO events (job_id, seq, type, at, source, payload, truncated) VALUES (?,?,?,?,?,?,0)")
-        .run(id, seq, event.type, now(), "turnweft", JSON.stringify(event.payload));
+        .run(id, seq, event.type, now(), "turnweft", JSON.stringify(redact(event.payload)));
       this.db.prepare("UPDATE jobs SET next_seq = ? WHERE id = ?").run(seq + 1, id);
       return true;
     });
@@ -369,7 +374,7 @@ export class Store {
       const r = this.db.prepare("SELECT next_seq FROM jobs WHERE id = ?").get(jobId) as Row;
       const seq = Number(r.next_seq);
       this.db.prepare("INSERT INTO events (job_id, seq, type, at, source, payload, truncated) VALUES (?,?,?,?,?,?,0)")
-        .run(jobId, seq, type, now(), source, JSON.stringify(payload));
+        .run(jobId, seq, type, now(), source, JSON.stringify(redact(payload)));
       this.db.prepare("UPDATE jobs SET next_seq = ? WHERE id = ?").run(seq + 1, jobId);
       return true;
     });
@@ -385,7 +390,7 @@ export class Store {
         const r = this.db.prepare("SELECT next_seq FROM jobs WHERE id = ?").get(id) as Row;
         const seq = Number(r.next_seq);
         this.db.prepare("INSERT INTO events (job_id, seq, type, at, source, payload, truncated) VALUES (?,?,?,?,?,?,0)")
-          .run(id, seq, event.type, now(), "turnweft", JSON.stringify(event.payload));
+          .run(id, seq, event.type, now(), "turnweft", JSON.stringify(redact(event.payload)));
         this.db.prepare("UPDATE jobs SET next_seq = ? WHERE id = ?").run(seq + 1, id);
       }
       return true;
@@ -393,7 +398,7 @@ export class Store {
   }
 
   setJobResult(id: string, result: JobResult) {
-    this.db.prepare("UPDATE jobs SET result = ? WHERE id = ?").run(JSON.stringify(result), id);
+    this.db.prepare("UPDATE jobs SET result = ? WHERE id = ?").run(JSON.stringify(redact(result)), id);
   }
 
   getJobResult(id: string): JobResult | undefined {
@@ -407,7 +412,7 @@ export class Store {
       const r = this.db.prepare("SELECT next_seq FROM jobs WHERE id = ?").get(jobId) as Row;
       const seq = Number(r.next_seq);
       this.db.prepare("INSERT INTO events (job_id, seq, type, at, source, payload, truncated) VALUES (?,?,?,?,?,?,?)")
-        .run(jobId, seq, type, now(), source, JSON.stringify(payload), truncated ? 1 : 0);
+        .run(jobId, seq, type, now(), source, JSON.stringify(redact(payload)), truncated ? 1 : 0);
       this.db.prepare("UPDATE jobs SET next_seq = ? WHERE id = ?").run(seq + 1, jobId);
       return seq;
     });
@@ -422,15 +427,15 @@ export class Store {
   // ------------------------------------------------------------ policies & proposals
   insertPolicy(p: UserPolicy) {
     this.db.prepare(`INSERT INTO policies (id, provider, canonical_root, intent, tier, excess, cli_version, adapter_version,
-      capability_digest, confirmed_via, confirmed_at, revision, revoked_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      capability_digest, confirmed_via, confirmed_at, revision, revoked_at, expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(p.id, p.provider, p.canonicalRoot, p.intent, p.tier, JSON.stringify(p.excessOverGrant), p.cliVersion,
-        p.adapterVersion, p.capabilityDigest, p.confirmedVia, p.confirmedAt, p.revision, p.revokedAt ?? null);
+        p.adapterVersion, p.capabilityDigest, p.confirmedVia, p.confirmedAt, p.revision, p.revokedAt ?? null, p.expiresAt ?? null);
   }
 
   findActivePolicy(k: { provider: ProviderId; canonicalRoot: string; intent: Intent; tier: string; capabilityDigest: string }): UserPolicy | undefined {
     const r = this.db.prepare(`SELECT * FROM policies WHERE provider = ? AND canonical_root = ? AND intent = ? AND tier = ?
-      AND capability_digest = ? AND revoked_at IS NULL ORDER BY revision DESC LIMIT 1`)
-      .get(k.provider, k.canonicalRoot, k.intent, k.tier, k.capabilityDigest) as Row | undefined;
+      AND capability_digest = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?) ORDER BY revision DESC LIMIT 1`)
+      .get(k.provider, k.canonicalRoot, k.intent, k.tier, k.capabilityDigest, now()) as Row | undefined;
     return r ? rowToPolicy(r) : undefined;
   }
 
@@ -487,7 +492,7 @@ export class Store {
     const r = this.db.prepare("SELECT next_seq FROM jobs WHERE id = ?").get(jobId) as Row;
     const seq = Number(r.next_seq);
     this.db.prepare("INSERT INTO events (job_id, seq, type, at, source, payload, truncated) VALUES (?,?,?,?,?,?,0)")
-      .run(jobId, seq, type, now(), "turnweft", JSON.stringify(payload));
+      .run(jobId, seq, type, now(), "turnweft", JSON.stringify(redact(payload)));
     this.db.prepare("UPDATE jobs SET next_seq = ? WHERE id = ?").run(seq + 1, jobId);
   }
 
@@ -693,18 +698,33 @@ export class Store {
    */
   acquireProjectLock(root: string, jobId: string, pid: number, token: string, isOwnerGone: (pid: number, token: string) => boolean,
     nativeStopped: (pid: number, token: string) => boolean = isOwnerGone, mode: "shared" | "exclusive" = "exclusive"): boolean {
+    // Process probes can spawn ps/pgrep. Never hold SQLite's global writer lock while probing.
+    const leaseIdentity = (lease: Lease | undefined) => JSON.stringify(lease &&
+      [lease.ownerPid, lease.ownerToken, lease.generation, lease.nativePid, lease.nativeToken]);
+    const candidates = new Map(this.projectLockHolders(root).map(r => {
+      const holder = this.getJob(r.jobId);
+      const lease = holder ? this.getLease(holder.sessionId) : undefined;
+      const dead = !(r.jobId === jobId && r.ownerPid === pid && r.ownerToken === token)
+        && isOwnerGone(r.ownerPid, r.ownerToken);
+      const stopped = dead && (!lease?.nativePid || !lease.nativeToken || nativeStopped(lease.nativePid, lease.nativeToken));
+      return [r.jobId, { r, sessionId: holder?.sessionId, lease, dead, stopped }] as const;
+    }));
     return this.tx(() => {
       for (const r of this.projectLockHolders(root)) {
         if (r.jobId === jobId && r.ownerPid === pid && r.ownerToken === token) return r.mode === mode;
         const holder = this.getJob(r.jobId);
         const lease = holder ? this.getLease(holder.sessionId) : undefined;
-        if (isOwnerGone(r.ownerPid, r.ownerToken)) {
-          if (lease?.nativePid && lease.nativeToken && !nativeStopped(lease.nativePid, lease.nativeToken)) return false;
+        const checked = candidates.get(r.jobId);
+        // Fence both identities and the lease generation/native identity against replacement during probes.
+        const unchanged = checked && JSON.stringify(checked.r) === JSON.stringify(r)
+          && checked.sessionId === holder?.sessionId && leaseIdentity(checked.lease) === leaseIdentity(lease);
+        if (!unchanged) return false; // new/replaced holders need their own out-of-transaction probes
+        if (checked.stopped) {
           this.releaseProjectLock(root, r.jobId);
           continue;
         }
-        // A terminal job retaining its hold may be frozen with a still-running provider.
-        if (r.jobId === jobId || mode === "exclusive" || r.mode === "exclusive" || !holder || TERMINAL.has(holder.state)) return false;
+        // A dead-but-unconfirmed provider and terminal/frozen holders continue blocking both modes.
+        if (checked.dead || r.jobId === jobId || mode === "exclusive" || r.mode === "exclusive" || !holder || TERMINAL.has(holder.state)) return false;
       }
       this.db.prepare(`INSERT INTO project_locks (canonical_root, job_id, owner_pid, owner_token, acquired_at, mode) VALUES (?,?,?,?,?,?)`)
         .run(root, jobId, pid, token, now(), mode);

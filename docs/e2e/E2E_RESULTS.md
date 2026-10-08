@@ -156,6 +156,31 @@ CC 的 `auto` 模式及其他非 bypass 模式照常弹窗，由 `src/tests/host
 - `node scripts/privacy-scan.mjs` 输出 `clean`；`git diff --check` 通过。权限不允许写入 worktree 的 Git 元数据，未能暂存或提交，因此未执行提交钩子。未推送、未发布。
 - `i18n-baseline.json` 保存的是历史 provider 权限文案及指纹；本次只增加结果警告，不改变该基线。
 
+## 3g. 无人值守确认与 U24 评审修复（U25 / R1 / R2，自动化测试）
+
+基于 `50748d8` 的未提交工作树；使用假 Agent 和临时 `TURNWEFT_HOME`，未读取真实用户配置、未调用付费模型、未进行真实 CC／Codex 或 macOS 确认 UI 验收。
+
+- `npm run build` 通过。最终 `npm test`：179 项，168 通过，11 失败，0 跳过／取消。新增 U25、R1、R2 与既有 U21 用例均通过；全量 gate 仍未全绿。
+- 定向测试（`unattended`、`mcp-server`、`parallel-writes`、`cli-main`）：76/76 通过。覆盖 config／call 优先级、无交互无等待任务与后续授权任务运行、查询不弹窗、单 job bypass 重授权及过期／已投递状态不复活、TTY 预授权与期限保存、提交／启动过期检查、运行中不被终止、provider 环境在 probe／launch／worker 中可见且输出遮蔽、工具参数拒绝环境注入、事务外进程探测与 lease 变更 fencing、doctor 无效配置诊断。fake agy 的 worker 任务成功且结果遮蔽；沙箱无法证明进程组停止时仍保持冻结保护，没有放宽停止条件。
+- 以下 11 项全部位于 `src/tests/core-runtime.test.ts`，依赖进程身份、进程组或对话框清理探测；与 §3f 的 11 项沙箱失败一致。直接运行系统 `ps` 返回 `operation not permitted`，`pgrep` 返回 `Cannot get process list`，因此此环境无法完成这些验收；需在允许进程探测的 host 重跑。没有修改 `proc.ts` 或跳过失败用例。
+
+  - `finding 1: takeover stops the previous owner's provider process first`
+  - `round 2 findings 1+2: provider started inside open() is recorded, and recovery stops its whole group`
+  - `round 2 finding 3: another session cannot take the project lock while a dead holder's provider still runs`
+  - `round 3 finding 2: a reused pid (token mismatch) is treated as stopped and never signalled`
+  - `round 3 findings 2+3: a dead leader with live children in its group is not stopped until the group is`
+  - `round 3 finding 4: a provider spawned inside open() is recorded before open completes`
+  - `round 3 finding 1: a provider that cannot be confirmed stopped freezes the session and keeps the lock`
+  - `round 6 finding 3: a dialog left by a killed helper is closed before another helper takes over`
+  - `round 7 finding 2: the helper releases its claim only after the dialog process is confirmed gone`
+  - `round 7 finding 3: a dialog left on a merged proposal is closed before the kept one shows a dialog`
+  - `round 8: with no recorded dialog child, a dead helper's process group must be confirmed gone before takeover`
+
+- `node scripts/privacy-scan.mjs`：clean（87 个 tracked 文件）。因沙箱不能暂存，另将全部 tracked 文件和两个新增源文件复制到临时 Git 快照，运行同一脚本：clean（89 文件）。`git diff --check` 通过。
+- 改动范围：`runtime/config.ts`、`service.ts`、`store.ts`、`policy.ts`、`worker.ts`、`worker-main.ts` 和新增 `secrets.ts`；`adapters/env.ts`、`providers.ts`、`acp.ts`、`agy.ts`；`cli/main.ts`、`mcp/server.ts`；`core/types.ts`、`service.ts`、`i18n.ts`；新增 `tests/unattended.test.ts` 及 CLI／MCP／锁／fixture／agy 测试。同步更新 CHANGELOG、两种语言 README、设计文档、两份 Skill 与本记录。
+- schema 3 阻止旧运行时重新打开含限时 policy 的状态库；升级前仍须结束已加载旧代码的 worker。环境配置仅在新 provider 进程启动时生效，已有 provider 进程不热更新；既有 wait-mode job 不会因后来设置 fail-fast 而自动取消。
+- Git 元数据写入被沙箱拒绝，改动未暂存、未提交，提交钩子未运行。R1 和 R2 已各备可独立提交的补丁，并在临时 HEAD 快照上验证可顺序应用；没有推送或发布。
+
 ## 4. 插件启动器
 
 - 运行时已安装（`npm link`，`/opt/homebrew/bin/turnweft` 为指向 `dist/cli/main.js` 的符号链接）：启动器找到运行时，并成功启动 `turnweft mcp`（上面第 2 节即经由它运行）。

@@ -29,6 +29,7 @@ export interface UpdateSessionInput {
 }
 
 export interface SubmitTurnInput {
+  nonInteractive?: boolean;
   sessionId: string;
   intent: Intent;
   prompt: string;
@@ -49,13 +50,13 @@ export interface SubmitTurnInput {
  *   waiting_confirmation and starts by itself once the human confirms (MCP elicitation, the macOS dialog,
  *   or `turnweft policy grant`). No resubmit is needed. A denial cancels it; it never times out into a
  *   denial, only expires with the proposal. Nothing runs before confirmation.
- * - "needs_confirmation": legacy shape (nothing recorded); core no longer returns it.
+ * - "needs_confirmation": fail-fast; proposal only, no job or queue entry.
  * - "rejected": e.g. capability_mismatch, invalid cwd, session closed.
  */
 export type SubmitTurnOutcome =
   | { kind: "accepted"; job: Job }
   | { kind: "awaiting_confirmation"; job: Job; proposal: PolicyProposal }
-  | { kind: "needs_confirmation"; proposal: PolicyProposal }
+  | { kind: "needs_confirmation"; proposal: PolicyProposal; confirmationMode?: "fail-fast" }
   | { kind: "rejected"; code: string; message: string };
 
 export interface GetJobInput {
@@ -87,6 +88,8 @@ export interface ConfirmPolicyInput {
   nonce: string;
   /** Who confirmed: an MCP elicitation accept, the macOS dialog shown by Turnweft itself, or `policy grant` on a TTY. */
   via: "elicitation" | "native-dialog" | "cli-tty";
+  /** Terminal-only time-limited grant. */
+  expiresAt?: string;
 }
 
 export interface TurnweftService {
@@ -114,6 +117,8 @@ export interface TurnweftService {
   confirmPolicy(input: ConfirmPolicyInput): Promise<UserPolicy>;
   /** The human explicitly denied: the proposal is consumed and jobs waiting on it are cancelled. */
   rejectPolicy(input: ConfirmPolicyInput): Promise<void>;
+  /** Terminal-only: generate the same trusted confirmation text without a prior submission. */
+  proposePolicy(input: { provider: ProviderId; root: string; intent: Intent }): Promise<PolicyProposal>;
   listPolicies(filter?: { canonicalRoot?: string; provider?: ProviderId }): Promise<UserPolicy[]>;
   revokePolicy(policyId: string): Promise<UserPolicy>;
   /** Proposal lookup for `turnweft policy grant <proposalId>` in a real TTY (includes `decision` once decided). */
