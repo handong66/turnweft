@@ -8,6 +8,10 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 
 ### Fixed
 
+- Denied actions from callbacks and native permission stops are deduplicated by `kind:title`, counted, and capped at 50 entries with `deniedActionsTotal`. Failure reasons and localized warnings show at most five entries plus the omitted count.
+- Job status queries now retain denial, empty-output, and truncation warnings without `includeResult`, using a persisted summary and a backward-compatible fallback for older results.
+- Text that crosses the storage limit in a single chunk is correctly capped and marked `truncated`. Truncation adds a warning without overriding the provider's completion or failure classification.
+
 - Provider environment redaction ignores values shorter than 8 characters, preserving short flags in output without changing the provider environment. Config values are cached by modification time/size and removed on refresh; launch snapshots remain protected for the Turnweft process lifetime.
 - Fail-fast job queries return `mark_blocked` with localized English/Chinese MCP and CLI warnings, consistent with submission. Bypass retries of waiting jobs reject closed or broken sessions with `session_closed` / `session_broken`.
 - CLI policy grants parse `--until` once so initialization cannot shift an HH:MM deadline to the following day. Plugin skills clarify that non-interactive mode never grants permission to run.

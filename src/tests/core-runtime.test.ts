@@ -217,13 +217,13 @@ test("A06: analyze intent denies writes", async () => {
   assert.equal(v.result?.permission?.answeredRequests[0]?.decision, "deny");
 });
 
-test("U26: analyze callback denials with a report succeed and retain every denied action", async () => {
+test("U26: analyze callback denials with a report succeed and retain distinct denied actions", async () => {
   const s = await svc.createSession({ provider: "droid", cwd: repo(), host });
   const v = await waitDone((await submit(s.id, "ASK:read\nASK:execute\nASK:edit\nSAY:Review complete", "analyze")).id);
   assert.equal(v.job.state, "succeeded");
   assert.equal(v.job.errorCode, undefined);
   assert.equal(v.result?.finalText, "Review complete");
-  assert.deepEqual(v.result?.deniedActions, [{ kind: "execute", title: "ask execute" }, { kind: "edit", title: "ask edit" }]);
+  assert.deepEqual(v.result?.deniedActions, [{ kind: "execute", title: "ask execute", count: 1 }, { kind: "edit", title: "ask edit", count: 1 }]);
   assert.deepEqual(v.result?.warningCodes, ["denied_actions"]);
   assert.deepEqual(jobWarnings(v), [localizedText("deniedActions", { count: "2", actions: "execute:ask execute, edit:ask edit" })]);
   const page = await svc.getJob({ jobId: v.job.id, includeResult: true, resultOffset: 9999 });
@@ -248,7 +248,7 @@ test("U26: agy-style native denial after a report succeeds; without a report it 
     assert.equal(v.job.state, report ? "succeeded" : "failed");
     assert.equal(v.job.errorCode, report ? undefined : "permission_blocked");
     assert.equal(v.result?.stopReason, "permission_blocked");
-    assert.deepEqual(v.result?.deniedActions, [{ kind: "command", title: "RunCommand" }]);
+    assert.deepEqual(v.result?.deniedActions, [{ kind: "command", title: "RunCommand", count: 1 }]);
     assert.deepEqual(v.result?.warningCodes, report ? ["denied_actions"] : undefined);
     if (!report) assert.equal(v.job.failureReason, localizedText("analyzePermissionBlocked", { actions: "command:RunCommand" }));
   }
@@ -262,6 +262,55 @@ test("U26: analyze empty output without denials succeeds with empty_output warni
     assert.equal(v.result?.deniedActions, undefined);
     assert.deepEqual(v.result?.warningCodes, ["empty_output"]);
     assert.deepEqual(jobWarnings(v), [localizedText("emptyOutput")]);
+  }
+});
+
+test("U26: callback and native denial loops share a bounded summary and status warnings", async () => {
+  const s = await svc.createSession({ provider: "agy", cwd: repo(), host });
+  const native = [{ kind: "execute", title: "ask execute" }, ...Array.from({ length: 80 }, (_, i) => ({ kind: "command", title: `cmd-${i}` }))];
+  for (const report of [true, false]) {
+    const prompt = `${report ? "SAY:Report\n" : ""}${"ASK:execute\n".repeat(100)}BLOCK:${JSON.stringify(native)}`;
+    const v = await waitDone((await submit(s.id, prompt, "analyze")).id);
+    assert.equal(v.job.state, report ? "succeeded" : "failed");
+    assert.equal(v.result?.deniedActions?.length, 50);
+    assert.equal(v.result?.deniedActionsTotal, 181);
+    assert.deepEqual(v.result?.deniedActions?.[0], { kind: "execute", title: "ask execute", count: 101 });
+    const status = await svc.getJob({ jobId: v.job.id });
+    assert.equal(status.result, undefined);
+    assert.deepEqual(status.job.warningCodes, v.result?.warningCodes);
+    assert.deepEqual(jobWarnings(status), jobWarnings(v));
+    const message = report ? jobWarnings(v)[0]! : v.job.failureReason!;
+    assert.match(message, /cmd-3/);
+    assert.doesNotMatch(message, /cmd-4/);
+    assert.match(message, new RegExp(localizedText("deniedActionsMore", { count: "76" })));
+  }
+});
+
+test("U26: empty-output warnings survive status-only queries and a store reopen", async () => {
+  const s = await svc.createSession({ provider: "droid", cwd: repo(), host });
+  const v = await waitDone((await submit(s.id, "STOP:end_turn", "analyze")).id);
+  const reopened = new Store();
+  try {
+    assert.deepEqual(reopened.getJob(v.job.id)?.warningCodes, ["empty_output"]);
+    assert.deepEqual(jobWarnings(await svc.getJob({ jobId: v.job.id })), jobWarnings(v));
+  } finally { reopened.close(); }
+});
+
+test("U26: MAX_TEXT overflow warns without hiding the provider classification", async () => {
+  const s = await svc.createSession({ provider: "droid", cwd: repo(), host });
+  for (const [prompt, state, truncated] of [
+    ["TEXT_SIZE:1000000", "succeeded", false],
+    ["TEXT_SIZE:1000001", "succeeded", true],
+    ["TEXT_SIZE:999999\nTEXT_SIZE:2\nSTOP:max_tokens", "failed", true],
+  ] as const) {
+    const v = await waitDone((await submit(s.id, prompt, "analyze")).id);
+    assert.equal(v.job.state, state);
+    assert.equal(v.result?.truncated, truncated);
+    assert.deepEqual(v.result?.warningCodes, truncated ? ["truncated"] : undefined);
+    const stored = new Store();
+    try { assert.equal(stored.getJobResult(v.job.id)?.finalText.length, 1000000); } finally { stored.close(); }
+    assert.deepEqual(jobWarnings(await svc.getJob({ jobId: v.job.id })), jobWarnings(v));
+    if (truncated) assert.match(jobWarnings(v)[0]!, /truncated/);
   }
 });
 

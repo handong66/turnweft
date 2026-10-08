@@ -1,6 +1,7 @@
 // Active-session executor (§6.2): the single owner of one session's native connection.
 // Spawned detached by the service; exits when idle (U13) or when the session closes.
 // Every job write is fenced by owner generation; takeover requires proof the previous native executor stopped.
+import { DeniedActions, deniedActionList } from "../core/denied-actions.js";
 import { renderMessage, text as messageText } from "../core/i18n.js";
 import type { Job, JobResult, JobState, PermissionMapping, Session } from "../core/types.js";
 import { getAdapter } from "../adapters/registry.js";
@@ -305,6 +306,7 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
   let pending = "";
   let truncated = false;
   const toolCalls: JobResult["toolCalls"] = [];
+  const denials = new DeniedActions();
   const answered: PermissionMapping["answeredRequests"] = [];
   let lastActivity = Date.now();
   let cancelSent = false;
@@ -322,7 +324,9 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
       const sep = breakBeforeText && text ? (text.endsWith("\n\n") ? "" : text.endsWith("\n") ? "\n" : "\n\n") : "";
       breakBeforeText = false;
       const chunk = sep + e.text;
-      if (text.length < MAX_TEXT) text += chunk; else truncated = true;
+      const remaining = MAX_TEXT - text.length;
+      text += chunk.slice(0, remaining);
+      if (chunk.length > remaining) truncated = true;
       pending += chunk;
       if (pending.length >= TEXT_EVENT_CHUNK) flushText();
     } else if (e.type === "tool") {
@@ -334,6 +338,7 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
     } else if (e.type === "permission") {
       breakBeforeText = true;
       flushText();
+      if (e.decision === "deny") denials.add({ kind: e.kind ?? "unknown", title: e.title });
       answered.push({ kind: e.kind ?? "unknown", title: e.title, decision: e.decision });
       ev("permission.resolved", "turnweft", { kind: e.kind, title: e.title, decision: e.decision, by: "grant+policy" });
     } else if (e.type === "config") {
@@ -380,11 +385,9 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
   }
   const lost = error instanceof AdapterError && error.code === "connection_lost";
   const cancelRequested = store.getJob(job.id)?.state === "cancel_requested";
-  const deniedActions = [
-    ...answered.filter(r => r.decision === "deny").map(({ kind, title }) => ({ kind, title })),
-    ...(outcome?.deniedActions ?? []),
-  ];
-  const actions = deniedActions.map(d => `${d.kind}:${d.title}`).join(", ");
+  for (const action of outcome?.deniedActions ?? []) denials.add(action);
+  const denialSummary = denials.summary();
+  const actions = deniedActionList(denialSummary);
   const warningCodes: NonNullable<JobResult["warningCodes"]> = [];
   let state: JobState;
   let errorCode: string | undefined;
@@ -397,7 +400,7 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
   } else if (outcome!.stopReason === "cancelled") {
     state = timedOut ? "timed_out" : "cancelled";
     if (timedOut) errorCode = "inactivity_timeout";
-  } else if (job.intent === "analyze" && (outcome!.stopReason === "end_turn" || outcome!.stopReason === "permission_blocked") && deniedActions.length) {
+  } else if (job.intent === "analyze" && (outcome!.stopReason === "end_turn" || outcome!.stopReason === "permission_blocked") && denials.total) {
     // U26: callback and native denials describe limitations, not the value of the returned report.
     if (text.trim()) { state = "succeeded"; warningCodes.push("denied_actions"); }
     else {
@@ -417,13 +420,15 @@ async function runJob(x: JobCtx): Promise<"done" | "connection_lost" | "frozen">
     failureReason = `provider stopped with ${outcome!.stopReason}`;
   }
 
+  if (truncated) warningCodes.push("truncated");
+
   const files = diffSnapshots(before, snapshot(session.canonicalRoot), relative(session.canonicalRoot, session.cwd));
   const sessionNow = store.getSession(session.id)!;
   const result: JobResult = {
     sessionId: session.id, jobId: job.id, provider: session.provider, cliVersion: probe.cliVersion,
     adapterVersion: adapter.adapterVersion, cwd: session.cwd, nativeSessionId: sessionNow.nativeSessionId,
     state, stopReason: outcome?.stopReason, finalText: text, resultComplete: !error || state === "cancelled", truncated,
-    ...(deniedActions.length ? { deniedActions } : {}),
+    ...denialSummary,
     ...(warningCodes.length ? { warningCodes } : {}),
     permission: { effectiveMode: JSON.stringify(effective), policyId: matchedPolicyId ?? (authorizedBy ? undefined : job.policyId), ...(authorizedBy ? { authorizedBy } : {}), excessOverGrant: tier.excess.map(message => renderMessage(message)), answeredRequests: answered },
     model, effort, files, toolCalls: toolCalls.slice(-200),

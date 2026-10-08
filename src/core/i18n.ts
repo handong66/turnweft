@@ -47,6 +47,8 @@ const messages = {
   zh: {
     markBlocked: "将此任务标记为受阻，继续其他独立工作，并在最后汇报受阻任务。不要将 implement 降级为 analyze，也不要通过 CLI 重新提交。只有用户可以运行授权命令。",
     deniedActions: "只读任务拒绝了 {count} 个操作：{actions}；结果可能不完整",
+    deniedActionsMore: "另有 {count} 次拒绝",
+    truncatedOutput: "任务输出超过保存上限，已截断（truncated）；结果可能不完整",
     emptyOutput: "只读任务已结束，但没有输出（empty_output）",
     analyzePermissionBlocked: "只读任务拒绝了操作：{actions}，且没有输出。analyze 拒绝所有命令，包括 git；宿主应先将所需命令输出导出为文件供 Agent 读取，或使用 implement。",
     concurrentWrites: "同一目录有其他写任务同时运行：{jobs}；改动可能互相覆盖，git 提交可能包含其他 Agent 的改动",
@@ -86,6 +88,8 @@ const messages = {
   en: {
     markBlocked: "Mark this task blocked, continue independent work, and report blocked tasks at the end. Do not downgrade implement to analyze or resubmit through the CLI. Only the user may run the grant command.",
     deniedActions: "Read-only task denied {count} action(s): {actions}; the result may be incomplete.",
+    deniedActionsMore: "and {count} more",
+    truncatedOutput: "Task output exceeded the storage limit and was truncated (truncated); the result may be incomplete.",
     emptyOutput: "Read-only task ended with no output (empty_output).",
     analyzePermissionBlocked: "Read-only task denied actions: {actions}, and returned no output. Analyze turns deny all commands including git; the host should export the needed command output to files for the agent to read, or use implement.",
     concurrentWrites: "Other write jobs ran concurrently in the same directory: {jobs}; changes may overwrite each other, and git commits may include another agent's changes.",

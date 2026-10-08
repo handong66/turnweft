@@ -149,49 +149,32 @@ CC 的 `auto` 模式及其他非 bypass 模式照常弹窗，由 `src/tests/host
 
 ## 3f. 同目录并行写入（U24，2026-10-07，自动化测试，测试机）
 
-本节使用假 Agent、临时 `TURNWEFT_HOME` 和真实 worker，不调用模型、不消耗额度；不是宿主交互或真实 Agent 验收。
+使用假 Agent、临时 `TURNWEFT_HOME` 和真实 worker，不调用模型；不是宿主交互或真实 Agent 验收。
 
-- 新增 12 项定向测试通过：配置校验与 realpath 精确匹配、共享／独占互斥与逐个释放、死亡 owner 和冻结持有者的停止证明、双向重叠记录与恢复保留、旧 SQLite 锁迁移、真实 worker 并行与同会话 FIFO、配置切换时两种模式的等待、MCP 参数拒绝、CLI 参数拒绝与警告、中英文警告。
-- `npm run build` 通过。`npm test` 共 164 项：153 通过、11 失败；默认串行与全部新增 U24 用例通过，但全量门禁未通过：测试沙箱禁止 `ps`，`pgrep`／`pkill` 无法读取进程列表，既有进程身份、接管恢复及对话框清理用例失败。直接运行系统探测命令已复现限制；没有修改 `proc.ts` 或放宽停止证明来绕过失败。
-- `node scripts/privacy-scan.mjs` 输出 `clean`；`git diff --check` 通过。权限不允许写入 worktree 的 Git 元数据，未能暂存或提交，因此未执行提交钩子。未推送、未发布。
-- `i18n-baseline.json` 保存的是历史 provider 权限文案及指纹；本次只增加结果警告，不改变该基线。
+- 覆盖：配置校验与 realpath 精确匹配（worktree 不被父目录条目覆盖）、共享／独占互斥与逐个释放、死亡 owner 与冻结持有者的停止证明、双向重叠记录与恢复后保留、旧 SQLite 锁迁移、真实 worker 并行与同会话 FIFO、配置中途切换时两种模式互相等待、MCP／CLI 参数不能设置 `parallelWrites`、中英文警告。
+- 评审后修复（R1／R2）：取锁时的进程探测移到 SQLite 写事务之外，事务内只按持有者与 lease 指纹复核后回收；`turnweft doctor` 逐条列出被忽略的 `parallelWrites` 条目及原因。
 
-## 3g. 无人值守确认与 U24 评审修复（U25 / R1 / R2，自动化测试）
+## 3g. 无人值守不被确认打断（U25，2026-10-08，自动化测试，测试机）
 
-基于 `50748d8` 的未提交工作树；使用假 Agent 和临时 `TURNWEFT_HOME`，未读取真实用户配置、未调用付费模型、未进行真实 CC／Codex 或 macOS 确认 UI 验收。
+使用假 Agent、临时 `TURNWEFT_HOME`；未调用真实模型，未做真实 CC／Codex 宿主或 macOS 对话框验收。
 
-- `npm run build` 通过。最终 `npm test`：179 项，168 通过，11 失败，0 跳过／取消。新增 U25、R1、R2 与既有 U21 用例均通过；全量 gate 仍未全绿。
-- 定向测试（`unattended`、`mcp-server`、`parallel-writes`、`cli-main`）：76/76 通过。覆盖 config／call 优先级、无交互无等待任务与后续授权任务运行、查询不弹窗、单 job bypass 重授权及过期／已投递状态不复活、TTY 预授权与期限保存、提交／启动过期检查、运行中不被终止、provider 环境在 probe／launch／worker 中可见且输出遮蔽、工具参数拒绝环境注入、事务外进程探测与 lease 变更 fencing、doctor 无效配置诊断。fake agy 的 worker 任务成功且结果遮蔽；沙箱无法证明进程组停止时仍保持冻结保护，没有放宽停止条件。
-- 以下 11 项全部位于 `src/tests/core-runtime.test.ts`，依赖进程身份、进程组或对话框清理探测；与 §3f 的 11 项沙箱失败一致。直接运行系统 `ps` 返回 `operation not permitted`，`pgrep` 返回 `Cannot get process list`，因此此环境无法完成这些验收；需在允许进程探测的 host 重跑。没有修改 `proc.ts` 或跳过失败用例。
+- 覆盖：配置与单次调用的优先级（单次 `nonInteractive: false` 不能覆盖配置的 fail-fast）；fail-fast 不弹窗、不创建等待任务、不阻塞同会话后续已授权任务；查询不为 fail-fast 任务弹窗，统一返回 `mark_blocked`；可信 bypass 重试只释放对应的等待任务、不确认共享提案，已投递／失败／过期／in_doubt 不复活，关闭或损坏的会话如实拒绝；`policy grant --until` 要求真实终端、HH:MM 跨午夜与带时区 ISO 解析、过去时间拒绝，提交和启动时都检查到期，运行中任务不被终止；`providerEnv` 在 probe／启动／worker 中生效，工具参数不能注入，长度至少 8 的值在结果、事件、SQLite 原始字节、日志和 doctor 中都被遮蔽，短值保持原样。
+- schema 3 阻止旧运行时打开含限时 policy 的状态库；升级前须结束已加载旧代码的 worker。`providerEnv` 只在新 provider 进程启动时生效。
 
-  - `finding 1: takeover stops the previous owner's provider process first`
-  - `round 2 findings 1+2: provider started inside open() is recorded, and recovery stops its whole group`
-  - `round 2 finding 3: another session cannot take the project lock while a dead holder's provider still runs`
-  - `round 3 finding 2: a reused pid (token mismatch) is treated as stopped and never signalled`
-  - `round 3 findings 2+3: a dead leader with live children in its group is not stopped until the group is`
-  - `round 3 finding 4: a provider spawned inside open() is recorded before open completes`
-  - `round 3 finding 1: a provider that cannot be confirmed stopped freezes the session and keeps the lock`
-  - `round 6 finding 3: a dialog left by a killed helper is closed before another helper takes over`
-  - `round 7 finding 2: the helper releases its claim only after the dialog process is confirmed gone`
-  - `round 7 finding 3: a dialog left on a merged proposal is closed before the kept one shows a dialog`
-  - `round 8: with no recorded dialog child, a dead helper's process group must be confirmed gone before takeover`
+## 3h. 分析任务被拒操作后的结果分类（U26，2026-10-08，自动化测试，测试机）
 
-- `node scripts/privacy-scan.mjs`：clean（87 个 tracked 文件）。因沙箱不能暂存，另将全部 tracked 文件和两个新增源文件复制到临时 Git 快照，运行同一脚本：clean（89 文件）。`git diff --check` 通过。
-- 改动范围：`runtime/config.ts`、`service.ts`、`store.ts`、`policy.ts`、`worker.ts`、`worker-main.ts` 和新增 `secrets.ts`；`adapters/env.ts`、`providers.ts`、`acp.ts`、`agy.ts`；`cli/main.ts`、`mcp/server.ts`；`core/types.ts`、`service.ts`、`i18n.ts`；新增 `tests/unattended.test.ts` 及 CLI／MCP／锁／fixture／agy 测试。同步更新 CHANGELOG、两种语言 README、设计文档、两份 Skill 与本记录。
-- schema 3 阻止旧运行时重新打开含限时 policy 的状态库；升级前仍须结束已加载旧代码的 worker。环境配置仅在新 provider 进程启动时生效，已有 provider 进程不热更新；既有 wait-mode job 不会因后来设置 fail-fast 而自动取消。
-- Git 元数据写入被沙箱拒绝，改动未暂存、未提交，提交钩子未运行。R1 和 R2 已各备可独立提交的补丁，并在临时 HEAD 快照上验证可顺序应用；没有推送或发布。
+使用假 Agent、临时 `TURNWEFT_HOME`、真实 worker 和 stream-json agy 替身；未调用真实模型。
 
-## 3h. 分析任务拒绝操作后的结果分类（U26，自动化测试）
+- 根因：agy adapter 把带 `denied_actions` 的成功结束映射为 `permission_blocked`，worker 无条件判失败；ACP 回调拒绝后 `end_turn` 则无条件成功，即使没有任何输出。现在 analyze 按最终文本分类，回调与原生拒绝汇总到 `deniedActions`。
+- 覆盖：拒绝且有报告（成功＋`denied_actions` 警告）、拒绝且空白输出（`permission_blocked`，说明 git 也被拒绝）、agy 原生拒绝、无拒绝的空输出（`empty_output`）、implement 权限停止不因有文本而成功、取消／不完整结束／provider 错误优先、分页保留警告、MCP／CLI 与中英文渲染。
+- 评审后修复：拒绝按 `kind:title` 去重计数，最多保存 50 项并记录总次数，警告和失败原因最多列 5 项；警告摘要存入任务行（`warning_summary`），只查状态也能看到；超过本地保存上限的输出加 `truncated` 警告，不改变结束分类。
+- 未在用户 prompt 中注入提示：现有 ACP 和 agy 发送路径没有独立的 system／instructions 通道。
 
-基于 `6fddb77` 的工作树；使用假 Agent、临时 `TURNWEFT_HOME`、真实 worker 和 stream-json agy 替身。未调用真实模型，也未做真实宿主 UI 验收。
+## 3i. U24–U26 全量测试（测试机）
 
-- 根因：agy adapter 将 `SUCCESS` 携带的 `denied_actions` 映射为 `permission_blocked`，worker 原来无条件判失败；ACP 回调拒绝后 `end_turn` 原来无条件成功。当前 worker 对 analyze 使用最终文本分类，原生与回调拒绝汇总到 `deniedActions`。有输出时成功并保存 `denied_actions` 警告，空白输出且有拒绝时失败并说明 git 也被拒绝、须提供文件或使用 implement；无拒绝的空输出成功并提示 `empty_output`。
-- 回归覆盖：拒绝且有报告、拒绝且空白输出、agy 原生拒绝、无拒绝但无输出、implement 权限停止不因有文本而成功、取消／不完整结束／provider 错误优先、结果分页保留警告、MCP／CLI 渲染和中英文文案。agy 替身另验证报告和原生拒绝结构同时保留、取消优先。
-- 未注入预告：当前 ACP 和 agy 发送路径没有已使用的独立 system／instructions 通道，用户 prompt 保持原样。`i18n-baseline.json` 记录历史权限文案及指纹，本次没有修改这些内容。
+每个提交都在测试机上跑过完整 `npm test`，全部通过：`50748d8` 164 项、`6fddb77` 179 项、`03130c9` 189 项、`1c1738d` 195 项、最终 200 项；`node scripts/privacy-scan.mjs` 均为 clean。实现时所用的 Agent 沙箱禁止 `ps`／`pgrep`，那里有 11 项进程探测类用例无法运行；它们在测试机上全部通过，没有为此修改进程停止证明或跳过用例。
 
-- 验证：`npm run build` 通过；`npm test` 共 189 项，178 通过、11 失败、0 跳过／取消；新增 U26 10 项全部通过。最终 MCP 定向测试 39/39 通过。11 项失败与 §3g 的完整名单一致，均在 `core-runtime.test.ts`；本轮直接探测再次确认 `ps` 为 `operation not permitted`，`pgrep` 为 `Cannot get process list`。未修改 `proc.ts` 或跳过用例，仍需在允许进程探测的环境重跑全量 gate。
-- `node scripts/privacy-scan.mjs`：clean（89 个 tracked 文件）；`git diff --check` 通过。`git add` 无法创建 worktree 的 `index.lock`（`Operation not permitted`），因此未暂存、未提交，提交钩子未执行。未推送、未发布。
-- 改动文件：`src/runtime/worker.ts`；`src/adapters/{agy,fake,types}.ts`；`src/core/{types,i18n}.ts`；`src/mcp/{envelope,server}.ts`；`src/tests/{core-runtime,agy-effort,cli-main,mcp-server,i18n}.test.ts` 与 `src/tests/fake-agy.ts`；`CHANGELOG.md`、`README.md`、`README.zh-CN.md`、`TURNWEFT_DESIGN_AND_DEVELOPMENT_PLAN.md`、两份插件 `skills/turnweft/SKILL.md`、`docs/m0/M0_RESULTS.md` 和本记录。
+U24–U26 均经 Droid 与 agy 两席只读评审（GO）。
 
 ## 4. 插件启动器
 
@@ -203,15 +186,3 @@ CC 的 `auto` 模式及其他非 bypass 模式照常弹窗，由 `src/tests/host
 - **CC 确认框（已查明）**：CC 2.1.286 桌面版声明 `elicitation: {form, url}`，但收到表单确认请求后自动返回 `decline`，耗时 4–6 ms，“Bypass permissions”和“Manual”两种模式下都一样。因此 CC 先弹 macOS 对话框（U18），终端确认（`turnweft policy grant`）作为第三通道。不做链接式（url）确认：它需要一个本机网页服务，任何本机进程（包括能执行命令的模型）都能访问，比要求真实终端的 CLI 确认更弱。
 - **CC 中 ▷ 运行按钮**：命令在伪终端中运行，通过了 TTY 检查并显示确认内容，但内嵌输出框不接受输入，无法输入 `yes`。需要在终端面板或自己的终端中运行。
 - **交互式 Codex 确认框（已查明）**：Codex 0.160.0 桌面版同样自动 `decline`（2 ms），所以走 macOS 对话框，实测通过（见第 3 节）。
-## 3i. U25 双评审后续修复（自动化测试）
-
-基于 `codex/work` 的 `03130c9`（已含 U26），修复 `6fddb77` 的评审项。开始时工作区干净，保留 U26；使用临时 `TURNWEFT_HOME`、假 Agent 和协议替身，未调用真实模型或验收真实宿主 UI。
-
-- 脱敏仅注册长度至少 8 个字符的值，provider 收到的环境不变；配置按 mtime／size 缓存，刷新后移除旧配置值，实际启动快照则在当前 Turnweft 进程生命周期内继续遮蔽。README 中英版记录此启发式与缓存语义，并明确 `providerEnv` 的 `PATH` 完全替换继承路径、须写全，运行时仍前置可执行文件目录并补齐 Node 目录。
-- fail-fast 等待记录属于防御性恢复分支（正常提交不创建此类记录），查询统一返回 `mark_blocked`；提交、MCP 查询与 CLI 查询共用中英受阻提示。bypass 重试在读取时及 probe 后事务内均拒绝 closed／broken 会话，不再返回旧的等待结果。
-- MCP 显式复制 `nonInteractive`；CLI 在参数校验时只解析一次 `--until` 并传递解析后的 Date；两份 Skill 修正“不会授予执行权限”的表述。CHANGELOG 补充幂等重试现在强制宿主绑定，未绑定返回 `not_attached`。
-- `npm run build` 通过；定向测试 `unattended`、`cli-main`、`mcp-server` 共 78/78 通过。新增 6 项覆盖短值保真／原样传递、8 字符边界、mtime-only／size-only 刷新、移除配置及启动快照保留、关闭／损坏与 probe 竞态、未绑定重试、中英文 MCP／CLI 查询和 HH:MM 跨初始化时刻不顺延一天；既有长值在持久化、事件、结果与 doctor 输出上的脱敏测试继续通过。
-- `git add` 被沙箱拒绝：无法创建 worktree 的 `index.lock`（`Operation not permitted`）。改动未暂存、未提交，提交钩子未执行；未推送、未发布。
-
-- 完整 `npm test`：195 项，184 通过、11 失败，0 跳过／取消。11 项均在 `core-runtime.test.ts`，完整名称与 §3g 列表逐项一致；新增回归与 U26 用例通过。当前直接探测仍为 `ps: operation not permitted`、`pgrep: Cannot get process list`（同时报告 sysmond 服务不可用）。未改进程安全检查或跳过用例，全量 gate 仍未全绿，需在允许进程探测的环境重跑。
-- `node scripts/privacy-scan.mjs`：clean（89 个 tracked 文件）；`git diff --check` 通过。

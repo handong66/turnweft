@@ -27,6 +27,8 @@ Analyze turns deny every command, including `git show`, `git diff` and `git log`
 
 For normally ended analyze turns (including native permission stops), non-empty final text means `succeeded`; denied requests are listed in `result.deniedActions` (`kind`, `title`), with `warningCodes: ["denied_actions"]` and a localized envelope warning that the result may be incomplete. Surface that warning and inspect the report. Empty/whitespace output plus a denial means `failed` / `permission_blocked`: supply the needed output as files, or use implement when authorized. Empty output with no denial stays `succeeded` with `empty_output`. Implement permission stops still fail, even if they returned text; cancellation, provider errors and incomplete turns retain their existing classifications. User prompt text is not rewritten.
 
+Denials are merged by `kind:title`, with per-entry `count`, at most 50 entries and `deniedActionsTotal` counting all observations (including repeats and omitted entries). Warnings and failure reasons show at most five entries plus the omitted count. Warning codes and denial summaries are also available on the job, so status-only polling warns without `includeResult`. Output beyond the 1,000,000-character storage limit is capped and adds `truncated`; this does not change the provider completion/failure classification.
+
 ## Parallel writers and reviews
 
 - To run several writing agents in parallel on one project, give each its own git worktree and create each Turnweft session in that directory. Turnweft locks per canonical directory, so different worktrees do not block each other.

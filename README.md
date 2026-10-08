@@ -173,6 +173,8 @@ Claude Code / Codex ──MCP──▶ turnweft mcp ──▶ shared state (~/.t
 
 Analyze turns deny every command, including git; reading files is allowed. For a diff, log or command output, the host must export it to a file first and point the agent to that file. A normally ended analyze turn (including a native permission stop) with non-empty output succeeds, even when actions were denied: `result.deniedActions` lists them and MCP/CLI show a localized warning that the result may be incomplete. Empty output plus denial fails with `permission_blocked` and guidance to provide files or use implement; empty output without denial succeeds with `empty_output`. Implement permission stops still fail even with text. These result states do not certify the report's quality.
 
+Denials are merged by `kind:title`, with per-entry `count`, at most 50 entries and `deniedActionsTotal` counting all observations (including repeats and omitted entries). Warnings and failure reasons show at most five entries plus the omitted count. Warning codes and denial summaries are also available on the job, so status-only polling warns without `includeResult`. Output beyond the 1,000,000-character storage limit is capped and adds `truncated`; this does not change the provider completion/failure classification.
+
 The full design and every decision are in [TURNWEFT_DESIGN_AND_DEVELOPMENT_PLAN.md](TURNWEFT_DESIGN_AND_DEVELOPMENT_PLAN.md). Test records: [docs/m0/M0_RESULTS.md](docs/m0/M0_RESULTS.md) (protocol probes) and [docs/e2e/E2E_RESULTS.md](docs/e2e/E2E_RESULTS.md) (end to end). These documents are in Chinese.
 
 ## Confirming permissions in detail

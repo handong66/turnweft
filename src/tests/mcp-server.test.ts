@@ -402,20 +402,23 @@ test("U24: MCP job results surface concurrent write warnings", async t => {
   assert.match(result.warnings[0]!, /twj_other/);
 });
 
-test("U26: MCP renders persisted denial and empty-output warnings alongside other job warnings", async t => {
+test("U26: MCP renders result and status-only warnings alongside other job warnings", async t => {
   const { client, service } = await setup(t);
   const original = service.getJob.bind(service);
-  for (const code of ["denied_actions", "empty_output"] as const) {
-    service.getJob = async input => {
-      const view = await original(input);
-      return { ...view, job: { ...view.job, concurrentWrites: ["twj_other"] }, result: {
-        sessionId: view.session.id, jobId: view.job.id, provider: "droid" as const, adapterVersion: "test", cwd: "/project", state: "succeeded" as const, resultComplete: true, truncated: false, toolCalls: [], finalText: "", warningCodes: [code], deniedActions: [{ kind: "command", title: "RunCommand" }],
-      } };
-    };
-    const result = await call(client, "turnweft_job", { jobId: "twj_job", includeResult: true });
-    assert.equal(result.warnings.length, 2);
-    assert.match(result.warnings[0]!, /twj_other/);
-    assert.match(result.warnings[1]!, code === "denied_actions" ? /command:RunCommand.*incomplete/ : /empty_output/);
+  for (const code of ["denied_actions", "empty_output", "truncated"] as const) {
+    for (const includeResult of [false, true]) {
+      service.getJob = async input => {
+        const view = await original(input);
+        return { ...view, job: { ...view.job, concurrentWrites: ["twj_other"], warningCodes: [code], deniedActions: [{ kind: "command", title: "RunCommand" }] }, ...(input.includeResult ? { result: {
+          sessionId: view.session.id, jobId: view.job.id, provider: "droid" as const, adapterVersion: "test", cwd: "/project", state: "succeeded" as const, resultComplete: true, truncated: false, toolCalls: [], finalText: "", warningCodes: [code], deniedActions: [{ kind: "command", title: "RunCommand" }],
+        } } : {}) };
+      };
+      const result = await call(client, "turnweft_job", { jobId: "twj_job", ...(includeResult ? { includeResult: true } : {}) });
+      if (!includeResult) assert.equal((result.data as { result?: unknown }).result, undefined);
+      assert.equal(result.warnings.length, 2);
+      assert.match(result.warnings[0]!, /twj_other/);
+      assert.match(result.warnings[1]!, code === "denied_actions" ? /command:RunCommand.*incomplete/ : new RegExp(code));
+    }
   }
 });
 

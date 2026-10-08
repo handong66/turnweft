@@ -173,6 +173,8 @@ Claude Code / Codex ──MCP──▶ turnweft mcp ──▶ 共享状态库（
 
 analyze 拒绝所有命令，包括 git；允许读取文件。需要 diff、log 或其他命令输出时，宿主须先导出到文件，再让 Agent 读取该文件。正常结束的 analyze（含原生权限停止）只要有非空输出就算 `succeeded`；有拒绝时，`result.deniedActions` 列出操作，MCP／CLI 显示“结果可能不完整”的中英文警告。空输出且有拒绝则为 `failed / permission_blocked`，提示提供文件或按授权使用 implement；空输出但无拒绝仍成功，并提示 `empty_output`。implement 因权限停止仍然失败，即使已返回文字。这些状态不代表报告质量通过验收。
 
+拒绝记录按 `kind:title` 合并，每项带 `count`，最多保存 50 项；`deniedActionsTotal` 统计全部拒绝观察次数（含重复和未保存项）。警告和失败原因最多展示 5 项及省略次数。job 同时提供警告码与拒绝摘要，不带 `includeResult` 的状态轮询也能看到警告。文本超过 1,000,000 字符保存上限时截断并添加 `truncated` 警告，不改变 provider 结束原因的成功／失败分类。
+
 完整设计和所有决定见 [TURNWEFT_DESIGN_AND_DEVELOPMENT_PLAN.md](TURNWEFT_DESIGN_AND_DEVELOPMENT_PLAN.md)。测试记录见 [docs/m0/M0_RESULTS.md](docs/m0/M0_RESULTS.md)（协议探针）和 [docs/e2e/E2E_RESULTS.md](docs/e2e/E2E_RESULTS.md)（端到端）。
 
 ## 权限确认的细节

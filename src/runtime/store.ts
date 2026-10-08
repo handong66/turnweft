@@ -7,6 +7,7 @@ import type {
   HostBinding, Intent, Job, JobResult, JobState, PolicyProposal, ProviderId, Session,
   SessionState, TurnEvent, UserPolicy, EventType, AgentCapabilities,
 } from "../core/types.js";
+import { warningSummary } from "../core/denied-actions.js";
 import { dbPath } from "./paths.js";
 import { redact } from "./secrets.js";
 import { now } from "./ids.js";
@@ -69,6 +70,8 @@ function rowToJob(r: Row): Job {
     ownerGeneration: n(r.owner_generation), acceptedAt: String(r.accepted_at), deliveredAt: s(r.delivered_at),
     startedAt: s(r.started_at), finishedAt: s(r.finished_at),
     concurrentWrites: j<string[]>(r.concurrent_writes),
+    // Old rows (or rows completed by an older worker) retain their result as the fallback.
+    ...warningSummary(j<JobResult>(r.warning_summary ?? r.result) ?? {}),
     confirmationMode: r.confirmation_mode === "fail-fast" ? "fail-fast" : "wait",
   };
 }
@@ -147,6 +150,8 @@ export class Store {
         DROP TABLE project_locks_v1;`);
     }
     if (!cols("jobs").has("concurrent_writes")) this.db.exec("ALTER TABLE jobs ADD COLUMN concurrent_writes TEXT");
+    // Additive and nullable: older workers may keep writing results; rowToJob handles those rows.
+    if (!cols("jobs").has("warning_summary")) this.db.exec("ALTER TABLE jobs ADD COLUMN warning_summary TEXT");
     const lease = cols("leases");
     if (!lease.has("native_pid")) this.db.exec("ALTER TABLE leases ADD COLUMN native_pid INTEGER");
     if (!lease.has("native_token")) this.db.exec("ALTER TABLE leases ADD COLUMN native_token TEXT");
@@ -349,7 +354,7 @@ export class Store {
       const cur = this.getJob(id);
       if (!cur || cur.ownerGeneration !== generation || TERMINAL.has(cur.state)) return false;
       if (!this.leaseIs(cur.sessionId, generation)) return false;
-      if (result) this.db.prepare("UPDATE jobs SET result = ? WHERE id = ?").run(JSON.stringify(redact({ ...result, concurrentWrites: cur.concurrentWrites })), id);
+      if (result) this.setJobResult(id, { ...result, concurrentWrites: cur.concurrentWrites });
       this.updateJob(id, { ...extra, state, finishedAt: now() });
       const r = this.db.prepare("SELECT next_seq FROM jobs WHERE id = ?").get(id) as Row;
       const seq = Number(r.next_seq);
@@ -398,7 +403,8 @@ export class Store {
   }
 
   setJobResult(id: string, result: JobResult) {
-    this.db.prepare("UPDATE jobs SET result = ? WHERE id = ?").run(JSON.stringify(redact(result)), id);
+    this.db.prepare("UPDATE jobs SET result = ?, warning_summary = ? WHERE id = ?")
+      .run(JSON.stringify(redact(result)), JSON.stringify(redact(warningSummary(result))), id);
   }
 
   getJobResult(id: string): JobResult | undefined {

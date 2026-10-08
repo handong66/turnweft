@@ -139,7 +139,7 @@ export type JobState =
 
 export const TERMINAL_JOB_STATES: readonly JobState[] = ["succeeded", "failed", "cancelled", "timed_out", "in_doubt"];
 
-export interface Job {
+export interface Job extends ResultWarnings {
   confirmationMode?: "wait" | "fail-fast";
   id: string; // twj_...
   sessionId: string;
@@ -210,11 +210,23 @@ export interface FileChangeEvidence {
   preexistingDirty: string[];
 }
 
-export interface JobResult {
-  /** U26: denied callback requests and provider-native denied actions. */
-  deniedActions?: Array<{ kind: string; title: string }>;
-  /** Persisted before result pagination; rendered in the host's current language. */
-  warningCodes?: Array<"denied_actions" | "empty_output">;
+export interface DeniedAction {
+  kind: string;
+  title: string;
+  /** Number of denial observations for this kind:title; absent in older results means one. */
+  count?: number;
+}
+
+export interface ResultWarnings {
+  /** Callback and native denials, deduplicated by kind:title; at most 50 entries. */
+  deniedActions?: DeniedAction[];
+  /** All denial observations, including repetitions and entries omitted by the cap. */
+  deniedActionsTotal?: number;
+  /** Persisted on both job and result; rendered in the querying host's current language. */
+  warningCodes?: Array<"denied_actions" | "empty_output" | "truncated">;
+}
+
+export interface JobResult extends ResultWarnings {
   /** Other implement jobs that ran concurrently in this canonical root. */
   concurrentWrites?: string[];
   sessionId: string;
