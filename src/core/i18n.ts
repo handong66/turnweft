@@ -45,6 +45,7 @@ export const currentLanguage = createLanguageResolver();
 
 const messages = {
   zh: {
+    markBlocked: "将此任务标记为受阻，继续其他独立工作，并在最后汇报受阻任务。不要将 implement 降级为 analyze，也不要通过 CLI 重新提交。只有用户可以运行授权命令。",
     deniedActions: "只读任务拒绝了 {count} 个操作：{actions}；结果可能不完整",
     emptyOutput: "只读任务已结束，但没有输出（empty_output）",
     analyzePermissionBlocked: "只读任务拒绝了操作：{actions}，且没有输出。analyze 拒绝所有命令，包括 git；宿主应先将所需命令输出导出为文件供 Agent 读取，或使用 implement。",
@@ -83,6 +84,7 @@ const messages = {
     grantPrompt: "输入 yes 授予此项权限，或 no 拒绝："
   },
   en: {
+    markBlocked: "Mark this task blocked, continue independent work, and report blocked tasks at the end. Do not downgrade implement to analyze or resubmit through the CLI. Only the user may run the grant command.",
     deniedActions: "Read-only task denied {count} action(s): {actions}; the result may be incomplete.",
     emptyOutput: "Read-only task ended with no output (empty_output).",
     analyzePermissionBlocked: "Read-only task denied actions: {actions}, and returned no output. Analyze turns deny all commands including git; the host should export the needed command output to files for the agent to read, or use implement.",

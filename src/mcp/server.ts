@@ -120,7 +120,7 @@ const confirmSchema = () => ({
 export function confirmationRequired(proposal: PolicyProposal, reason?: string, failFast = false) {
   return success({ kind: "needs_confirmation" as const, proposal: publicProposal(proposal), nextAction: failFast ? "mark_blocked" as const : "confirm_policy" as const, grantCommand: `turnweft policy grant ${proposal.proposalId}` }, [
     ...(reason ? [reason] : []),
-    ...(failFast ? ["Mark this task blocked, continue independent work, and report blocked tasks at the end. Do not downgrade implement to analyze or resubmit through the CLI. Only the user may run the grant command."] : []),
+    ...(failFast ? [text("markBlocked")] : []),
     `Ask the user to run turnweft policy grant ${proposal.proposalId} in a terminal, then resubmit with the same requestId.`,
   ]);
 }
@@ -188,7 +188,7 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
         }
         case "turnweft_ask":
         case "turnweft_delegate": {
-          const turn: SubmitTurnInput = { ...(input as Pick<SubmitTurnInput, "sessionId" | "prompt" | "requestId">), host, intent: request.params.name === "turnweft_ask" ? "analyze" : "implement", ...(bypass ? { hostBypass: bypass } : {}) };
+          const turn: SubmitTurnInput = { ...(input as Pick<SubmitTurnInput, "sessionId" | "prompt" | "requestId">), nonInteractive: input.nonInteractive as boolean | undefined, host, intent: request.params.name === "turnweft_ask" ? "analyze" : "implement", ...(bypass ? { hostBypass: bypass } : {}) };
           if (nonInteractive(turn.nonInteractive)) turn.nonInteractive = true;
           let outcome = await service.submitTurn(turn);
           const failFast = nonInteractive(turn.nonInteractive) || (outcome.kind === "needs_confirmation" && outcome.confirmationMode === "fail-fast");
@@ -277,8 +277,8 @@ export function createMcpServer(service: TurnweftService, opts: McpServerOptions
         case "turnweft_job": {
           const view = await service.getJob({ ...input, jobId: input.jobId as string, waitMs: boundedWait(input.waitMs as number | undefined, opts) });
           if (view.job.state === "waiting_confirmation" && view.job.confirmationMode !== "fail-fast" && view.job.proposalId) opts.showDialog?.(view.job.proposalId); // retry; the helper dedupes (round 5, 8)
-          envelope = success(view, view.job.state === "waiting_confirmation"
-            ? view.job.confirmationMode === "fail-fast" ? ["Mark this task blocked, continue independent work, and report blocked tasks at the end. Do not downgrade intent or resubmit through the CLI."] : [`Still waiting for the user to choose in the Turnweft dialog (or run turnweft policy grant in a terminal). Keep calling turnweft_job (waitMs 25000, afterSeq ${view.nextSeq}); do not end this turn or resubmit.`]
+          envelope = success(view, view.job.state === "waiting_confirmation" && view.job.confirmationMode !== "fail-fast"
+            ? [`Still waiting for the user to choose in the Turnweft dialog (or run turnweft policy grant in a terminal). Keep calling turnweft_job (waitMs 25000, afterSeq ${view.nextSeq}); do not end this turn or resubmit.`]
             : jobWarnings(view));
           break;
         }

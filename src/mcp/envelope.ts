@@ -6,6 +6,7 @@ import { text } from "../core/i18n.js";
 export function jobWarnings(view: JobView): string[] {
   const jobs = view.result?.concurrentWrites ?? view.job.concurrentWrites;
   const warnings = jobs?.length ? [text("concurrentWrites", { jobs: jobs.join(", ") })] : [];
+  if (view.job.state === "waiting_confirmation" && view.job.confirmationMode === "fail-fast") warnings.push(text("markBlocked"));
   for (const code of view.result?.warningCodes ?? []) {
     const denied = view.result?.deniedActions ?? [];
     warnings.push(code === "empty_output" ? text("emptyOutput") : text("deniedActions", {

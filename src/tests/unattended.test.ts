@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, chmodSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalService } from "../runtime/service.js";
@@ -9,6 +9,11 @@ import { runWorker } from "../runtime/worker.js";
 import { parsePolicyUntil } from "../runtime/policy.js";
 import { ADAPTERS } from "../adapters/providers.js";
 import { providerEnv } from "../adapters/env.js";
+import { redact } from "../runtime/secrets.js";
+import { jobWarnings } from "../mcp/envelope.js";
+import { confirmationRequired, createMcpServer } from "../mcp/server.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { runCli } from "../cli/main.js";
 import { PassThrough, Writable } from "node:stream";
 
@@ -117,6 +122,113 @@ test("U25: --until parsing is bounded and unambiguous", () => {
   const next = Date.parse(parsePolicyUntil("11:00", current));
   assert.ok(next > current.getTime() && next - current.getTime() <= 24 * 60 * 60_000);
   for (const value of ["yesterday", "25:00", "2026-10-08T13:00:00", "2020-01-01T00:00:00Z"]) assert.throws(() => parsePolicyUntil(value, current));
+});
+
+test("U25 review: short provider values preserve output and reach launches unchanged", t => {
+  const { config } = fixture(t);
+  const env = { VERBOSE: "1", DEBUG: "true", EMPTY: "", SHORT: "1234567", SECRET: "12345678" };
+  config({ providerEnv: { agy: env } });
+  const launched = providerEnv("agy", {}, undefined, "agy");
+  for (const [key, value] of Object.entries(env)) assert.equal(launched[key], value);
+  const output = { finalText: "true 1 1234567", jobId: "twj_123", at: "2026-10-08T11:01:00Z", version: "1.2.3", diff: "+ true 1", nested: [env.SECRET] };
+  assert.deepEqual(redact(output), { ...output, nested: ["[REDACTED]"] });
+});
+
+test("U25 review: redaction caches config by mtime/size and drops removed config-only values", t => {
+  const { home, config } = fixture(t);
+  const file = join(home, "config.json");
+  const first = "first-test-secret", next = "other-test-secret", larger = "larger-test-secret-value";
+  const parse = t.mock.method(JSON, "parse");
+  config({ providerEnv: { agy: { TOKEN: first } } });
+  utimesSync(file, 1000, 1000);
+  assert.equal(redact(first), "[REDACTED]");
+  const parsed = parse.mock.callCount();
+  for (let i = 0; i < 10; i++) assert.equal(redact(first), "[REDACTED]");
+  assert.equal(parse.mock.callCount(), parsed, "unchanged config is not parsed per event");
+  config({ providerEnv: { agy: { TOKEN: next } } });
+  utimesSync(file, 1001, 1001); // Same size, different mtime.
+  assert.deepEqual(redact([first, next]), [first, "[REDACTED]"]);
+  config({ providerEnv: { agy: { TOKEN: larger } } });
+  utimesSync(file, 1001, 1001); // Same mtime, different size.
+  assert.deepEqual(redact([next, larger]), [next, "[REDACTED]"]);
+  providerEnv("agy", {}, undefined, "agy"); // Actual launch snapshots survive removal.
+  config({});
+  assert.deepEqual(redact([first, next, larger]), [first, next, "[REDACTED]"]);
+  config({ providerEnv: { agy: { TOKEN: next } } });
+  assert.equal(redact(next), "[REDACTED]");
+  rmSync(file);
+  assert.deepEqual(redact([next, larger]), [next, "[REDACTED]"]);
+});
+
+test("U25 review: waiting bypass retries reject closed/broken sessions, including a probe race", async t => {
+  const { home, svc, store } = fixture(t);
+  for (const state of ["closed", "broken"] as const) {
+    for (const racing of [false, true]) {
+      const s = await svc.createSession({ provider: "dim", cwd: home, host });
+      const input = { sessionId: s.id, intent: "implement" as const, prompt: "hello", requestId: `${state}-${racing}`, host };
+      const o = await svc.submitTurn(input);
+      assert.equal(o.kind, "awaiting_confirmation"); if (o.kind !== "awaiting_confirmation") return;
+      const original = store.getSession.bind(store);
+      // First read sees ready; the transaction after the async probe sees the changed session.
+      const mock = racing ? t.mock.method(store, "getSession", (id: string) => {
+        const snapshot = original(id);
+        if (id === s.id) store.updateSession(id, { state });
+        return snapshot;
+      }, { times: 1 }) : undefined;
+      if (!racing) store.updateSession(s.id, { state });
+      const retry = await svc.submitTurn({ ...input, hostBypass: "codex:danger-full-access" });
+      mock?.mock.restore();
+      assert.equal(retry.kind, "rejected");
+      assert.equal(retry.kind === "rejected" && retry.code, `session_${state}`);
+      assert.equal(store.getJob(o.job.id)?.state, "waiting_confirmation");
+      assert.equal(store.getJob(o.job.id)?.hostBypass, undefined);
+    }
+  }
+});
+
+test("U25 review: idempotent retries require the submitting host to be attached", async t => {
+  const { home, svc } = fixture(t);
+  const s = await svc.createSession({ provider: "dim", cwd: home, host });
+  const input = { sessionId: s.id, intent: "implement" as const, prompt: "hello", requestId: "bound", host };
+  await svc.submitTurn(input);
+  const retry = await svc.submitTurn({ ...input, host: { ...host, conversationId: "unbound" }, hostBypass: "codex:danger-full-access" });
+  assert.equal(retry.kind === "rejected" && retry.code, "not_attached");
+});
+
+test("U25 review: fail-fast job queries mark blocked with localized MCP/CLI warnings", async t => {
+  const { home, svc, store, config } = fixture(t);
+  const s = await svc.createSession({ provider: "dim", cwd: home, host });
+  const o = await svc.submitTurn({ sessionId: s.id, intent: "implement", prompt: "hello", requestId: "query", host });
+  assert.equal(o.kind, "awaiting_confirmation"); if (o.kind !== "awaiting_confirmation") return;
+  assert.equal((await svc.getJob({ jobId: o.job.id })).nextAction, "confirm_policy");
+  // Defensive legacy/recovery state: fresh fail-fast submissions never create waiting jobs.
+  store.updateJob(o.job.id, { confirmationMode: "fail-fast" });
+  const previous = process.env.TURNWEFT_LANG;
+  delete process.env.TURNWEFT_LANG;
+  t.after(() => { if (previous === undefined) delete process.env.TURNWEFT_LANG; else process.env.TURNWEFT_LANG = previous; });
+  let dialogs = 0;
+  const server = createMcpServer(svc, { showDialog: () => { dialogs++; return true; } });
+  const client = new Client({ name: "test", version: "test" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport); await client.connect(clientTransport);
+  t.after(async () => { await client.close(); await server.close(); });
+  for (const language of ["en", "zh"] as const) {
+    config({ language });
+    const view = await svc.getJob({ jobId: o.job.id });
+    assert.equal(view.nextAction, "mark_blocked");
+    const warnings = jobWarnings(view);
+    assert.match(warnings.join(" "), language === "en" ? /Mark this task blocked/ : /标记为受阻/);
+    assert.equal(warnings[0], confirmationRequired(o.proposal, undefined, true).warnings[0]);
+    const result = await client.callTool({ name: "turnweft_job", arguments: { jobId: o.job.id } });
+    const envelope = result.structuredContent as { data: { nextAction: string }; warnings: string[] };
+    assert.equal(envelope.data.nextAction, "mark_blocked"); assert.deepEqual(envelope.warnings, warnings);
+    let output = "";
+    const stream = new Writable({ write(c, _, done) { output += c; done(); } });
+    await runCli(["job", "status", o.job.id, "--json"], svc, { stdin: new PassThrough(), stdout: stream, stderr: stream });
+    assert.equal(JSON.parse(output).data.nextAction, "mark_blocked");
+    assert.deepEqual(JSON.parse(output).warnings, warnings);
+  }
+  assert.equal(dialogs, 0);
 });
 
 test("U25: providerEnv reaches probes and launches, reloads, and redacts persisted/output values", async t => {

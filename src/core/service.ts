@@ -78,7 +78,7 @@ export interface JobView {
   events: TurnEvent[];
   nextSeq: number;
   /** Suggested next step for the calling agent. */
-  nextAction: "wait" | "read_result" | "confirm_policy" | "reconcile_in_doubt" | "none";
+  nextAction: "wait" | "read_result" | "confirm_policy" | "mark_blocked" | "reconcile_in_doubt" | "none";
   result?: JobResult;
   resultNextOffset?: number;
 }

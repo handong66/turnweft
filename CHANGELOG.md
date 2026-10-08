@@ -8,11 +8,18 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 
 ### Fixed
 
+- Provider environment redaction ignores values shorter than 8 characters, preserving short flags in output without changing the provider environment. Config values are cached by modification time/size and removed on refresh; launch snapshots remain protected for the Turnweft process lifetime.
+- Fail-fast job queries return `mark_blocked` with localized English/Chinese MCP and CLI warnings, consistent with submission. Bypass retries of waiting jobs reject closed or broken sessions with `session_closed` / `session_broken`.
+- CLI policy grants parse `--until` once so initialization cannot shift an HH:MM deadline to the following day. Plugin skills clarify that non-interactive mode never grants permission to run.
+
 - Analyze outcomes now account for returned text: denied commands with a report succeed with structured `deniedActions` and localized MCP/CLI warnings; denials without output fail as `permission_blocked` with file-export guidance. Empty output without denials succeeds with `empty_output`. This handles both ACP callbacks and agy native denials while preserving implement permission-stop failures (U26).
 
 - Probe dead project-lock owners outside SQLite write transactions, then fence reclamation against holder and lease changes (U24).
 
 ### Changed
+
+- Idempotent retries now enforce the session host binding and return `not_attached` for an unbound host; previously this check applied only to new submissions.
+- Both READMEs clarify that `providerEnv.PATH` replaces the inherited PATH and must be complete; executable and Node directory helpers still apply.
 
 - A fresh trusted host bypass retry can authorize its matching undelivered waiting job with the current capability digest, without confirming a shared proposal or reviving finished jobs.
 - Unattended hosts mark unauthorized tasks blocked, continue independent work, and report at the end; skills forbid intent downgrades, CLI fallback and agent edits to user config. `permissionTimeoutMs` remains reserved, not an implemented pending-action timer.

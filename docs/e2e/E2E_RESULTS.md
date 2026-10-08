@@ -203,3 +203,15 @@ CC 的 `auto` 模式及其他非 bypass 模式照常弹窗，由 `src/tests/host
 - **CC 确认框（已查明）**：CC 2.1.286 桌面版声明 `elicitation: {form, url}`，但收到表单确认请求后自动返回 `decline`，耗时 4–6 ms，“Bypass permissions”和“Manual”两种模式下都一样。因此 CC 先弹 macOS 对话框（U18），终端确认（`turnweft policy grant`）作为第三通道。不做链接式（url）确认：它需要一个本机网页服务，任何本机进程（包括能执行命令的模型）都能访问，比要求真实终端的 CLI 确认更弱。
 - **CC 中 ▷ 运行按钮**：命令在伪终端中运行，通过了 TTY 检查并显示确认内容，但内嵌输出框不接受输入，无法输入 `yes`。需要在终端面板或自己的终端中运行。
 - **交互式 Codex 确认框（已查明）**：Codex 0.160.0 桌面版同样自动 `decline`（2 ms），所以走 macOS 对话框，实测通过（见第 3 节）。
+## 3i. U25 双评审后续修复（自动化测试）
+
+基于 `codex/work` 的 `03130c9`（已含 U26），修复 `6fddb77` 的评审项。开始时工作区干净，保留 U26；使用临时 `TURNWEFT_HOME`、假 Agent 和协议替身，未调用真实模型或验收真实宿主 UI。
+
+- 脱敏仅注册长度至少 8 个字符的值，provider 收到的环境不变；配置按 mtime／size 缓存，刷新后移除旧配置值，实际启动快照则在当前 Turnweft 进程生命周期内继续遮蔽。README 中英版记录此启发式与缓存语义，并明确 `providerEnv` 的 `PATH` 完全替换继承路径、须写全，运行时仍前置可执行文件目录并补齐 Node 目录。
+- fail-fast 等待记录属于防御性恢复分支（正常提交不创建此类记录），查询统一返回 `mark_blocked`；提交、MCP 查询与 CLI 查询共用中英受阻提示。bypass 重试在读取时及 probe 后事务内均拒绝 closed／broken 会话，不再返回旧的等待结果。
+- MCP 显式复制 `nonInteractive`；CLI 在参数校验时只解析一次 `--until` 并传递解析后的 Date；两份 Skill 修正“不会授予执行权限”的表述。CHANGELOG 补充幂等重试现在强制宿主绑定，未绑定返回 `not_attached`。
+- `npm run build` 通过；定向测试 `unattended`、`cli-main`、`mcp-server` 共 78/78 通过。新增 6 项覆盖短值保真／原样传递、8 字符边界、mtime-only／size-only 刷新、移除配置及启动快照保留、关闭／损坏与 probe 竞态、未绑定重试、中英文 MCP／CLI 查询和 HH:MM 跨初始化时刻不顺延一天；既有长值在持久化、事件、结果与 doctor 输出上的脱敏测试继续通过。
+- `git add` 被沙箱拒绝：无法创建 worktree 的 `index.lock`（`Operation not permitted`）。改动未暂存、未提交，提交钩子未执行；未推送、未发布。
+
+- 完整 `npm test`：195 项，184 通过、11 失败，0 跳过／取消。11 项均在 `core-runtime.test.ts`，完整名称与 §3g 列表逐项一致；新增回归与 U26 用例通过。当前直接探测仍为 `ps: operation not permitted`、`pgrep: Cannot get process list`（同时报告 sysmond 服务不可用）。未改进程安全检查或跳过用例，全量 gate 仍未全绿，需在允许进程探测的环境重跑。
+- `node scripts/privacy-scan.mjs`：clean（89 个 tracked 文件）；`git diff --check` 通过。

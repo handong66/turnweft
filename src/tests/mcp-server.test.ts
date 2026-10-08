@@ -427,6 +427,7 @@ test("U25: nonInteractive suppresses all confirmation channels and rejects provi
     server: { showDialog: () => { dialogs++; return true; } } });
   for (const tool of ["turnweft_ask", "turnweft_delegate"]) {
     const r = await call(client, tool, { ...turn, nonInteractive: true });
+    assert.equal(service.submissions.at(-1)?.nonInteractive, true);
     assert.equal(r.data?.kind, "needs_confirmation"); assert.equal(r.data?.nextAction, "mark_blocked");
     assert.equal(r.data?.grantCommand, "turnweft policy grant twp_proposal");
     assert.match(r.warnings.join(" "), /continue independent work/);

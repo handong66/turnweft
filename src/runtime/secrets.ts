@@ -1,25 +1,42 @@
-// Redact configured provider values at persistence/output boundaries, including values from earlier
-// launches in this process after config rotation. Never persist the environment itself.
+// Redact provider values of at least 8 characters at persistence/output boundaries. Short flags
+// (e.g. 1/true) are not secrets for this heuristic; provider launch values stay unchanged.
+// Launch snapshots remain protected for this process's lifetime, even after config rotation.
+import { statSync } from "node:fs";
+import { join } from "node:path";
 import { loadConfig } from "./config.js";
 import { stateDir } from "./paths.js";
 const known = new Map<string, Set<string>>();
+const configured = new Map<string, { mtimeMs: number; size: number; values: string[] }>();
+const secretLike = (value: unknown): value is string => typeof value === "string" && value.length >= 8;
 
 export function rememberProviderValues(entries: string[]): void {
   const home = stateDir();
   const values = known.get(home) ?? new Set<string>();
-  for (const value of entries) if (value) values.add(value);
+  for (const value of entries) if (secretLike(value)) values.add(value);
   known.set(home, values);
 }
 
 export function providerValues(): string[] {
   const home = stateDir();
-  const values = known.get(home) ?? new Set<string>();
-  for (const env of Object.values(loadConfig().providerEnv ?? {})) {
-    if (env && typeof env === "object" && !Array.isArray(env)) {
-      for (const value of Object.values(env)) if (typeof value === "string" && value) values.add(value);
+  let cache = configured.get(home);
+  try {
+    const { mtimeMs, size } = statSync(join(home, "config.json"));
+    if (!cache || cache.mtimeMs !== mtimeMs || cache.size !== size) {
+      const values = new Set<string>();
+      for (const env of Object.values(loadConfig().providerEnv ?? {})) {
+        if (env && typeof env === "object" && !Array.isArray(env)) {
+          for (const value of Object.values(env)) if (secretLike(value)) values.add(value);
+        }
+      }
+      cache = { mtimeMs, size, values: [...values] };
+      configured.set(home, cache);
     }
+  } catch {
+    configured.delete(home);
+    cache = undefined;
   }
-  known.set(home, values);
+  // Replace config-only values on refresh; only actual launch snapshots survive removal.
+  const values = new Set([...(known.get(home) ?? []), ...(cache?.values ?? [])]);
   return [...values].sort((a, b) => b.length - a.length);
 }
 

@@ -339,3 +339,22 @@ test("U25: pre-authorization requires TTY, rejects auto-yes and unbounded scope 
     if (!tty) assert.equal(h.envelope().error.code, "tty_required");
   }
 });
+
+test("U25 review: --until keeps its first parsed date across service initialization", async t => {
+  const before = new Date(2026, 9, 8, 12, 59, 59);
+  const expiry = new Date(2026, 9, 8, 13, 0, 0).toISOString();
+  t.mock.timers.enable({ apis: ["Date"], now: before });
+  for (const args of [
+    ["policy", "grant", "twp_proposal"],
+    ["policy", "grant", "--provider", "agy", "--root", "/project", "--intent", "implement"],
+  ]) {
+    t.mock.timers.setTime(before.getTime());
+    const h = harness("yes\n", true); const service = new FakeService();
+    const code = await runCli([...args, "--until", "13:00", "--json"], async () => {
+      t.mock.timers.setTime(before.getTime() + 2000);
+      return service;
+    }, h.io);
+    assert.equal(code, 0);
+    assert.equal(service.confirmations[0]?.expiresAt, expiry, "does not roll expiry to tomorrow");
+  }
+});

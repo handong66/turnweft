@@ -187,7 +187,9 @@ export class LocalService implements TurnweftService {
   private async retryOutcome(job: Job, input: SubmitTurnInput): Promise<SubmitTurnOutcome> {
     const session = this.store.getSession(job.sessionId);
     if (!session?.hostBindings.some(b => sameHost(b, input.host))) return { kind: "rejected", code: "not_attached", message: "this host is not bound to the session; call attach first" };
-    if (job.state === "waiting_confirmation" && input.hostBypass && session.state !== "closed" && session.state !== "broken") {
+    if (job.state === "waiting_confirmation" && input.hostBypass) {
+      if (session.state === "closed") return { kind: "rejected", code: "session_closed", message: "session is closed" };
+      if (session.state === "broken") return { kind: "rejected", code: "session_broken", message: session.brokenReason ?? "session is broken" };
       const probe = await this.probe(session.provider, true);
       if (!probe.available) return { kind: "rejected", code: "provider_unavailable", message: probe.problems.join("; ") };
       const tier = getAdapter(session.provider).tierFor(job.intent, probe);
@@ -195,15 +197,17 @@ export class LocalService implements TurnweftService {
         this.store.expireStaleTx();
         const cur = this.store.getJob(job.id);
         const s = this.store.getSession(job.sessionId);
+        if (!s || s.state === "closed") return "session_closed";
+        if (s.state === "broken") return "session_broken";
         if (!cur || cur.state !== "waiting_confirmation" || cur.deliveredAt || cur.sessionId !== input.sessionId
-          || cur.requestId !== input.requestId || cur.intent !== input.intent || cur.promptDigest !== sha256(input.prompt)
-          || !s || s.state === "closed" || s.state === "broken") return false;
+          || cur.requestId !== input.requestId || cur.intent !== input.intent || cur.promptDigest !== sha256(input.prompt)) return false;
         this.store.updateJob(cur.id, { state: "queued", hostBypass: input.hostBypass,
           hostBypassDigest: capabilityDigest(session.provider, probe, tier),
           confirmationMode: nonInteractive(input.nonInteractive) ? "fail-fast" : cur.confirmationMode });
         this.store.appendEventTx(cur.id, "diagnostic", { authorizedBy: input.hostBypass, message: "fresh host bypass authorized this waiting job only" });
         return true;
       });
+      if (typeof released === "string") return { kind: "rejected", code: released, message: "session is closed or broken" };
       if (released) this.ensureWorker(job.sessionId);
     }
     return this.outcomeFor(job);
@@ -241,7 +245,9 @@ export class LocalService implements TurnweftService {
     const view: JobView = {
       job, session: { id: s.id, provider: s.provider, state: s.state, cwd: s.cwd, canonicalRoot: s.canonicalRoot },
       terminal, events, nextSeq: events.length ? events[events.length - 1]!.seq : afterSeq,
-      nextAction: job.state === "in_doubt" ? "reconcile_in_doubt" : job.state === "waiting_confirmation" ? "confirm_policy" : terminal ? "read_result" : "wait",
+      // Fail-fast submissions never create waiting jobs; keep recovery/legacy records correct too.
+      nextAction: job.state === "in_doubt" ? "reconcile_in_doubt" : job.state === "waiting_confirmation"
+        ? job.confirmationMode === "fail-fast" ? "mark_blocked" : "confirm_policy" : terminal ? "read_result" : "wait",
     };
     if (terminal && input.includeResult) {
       const r = this.store.getJobResult(job.id);

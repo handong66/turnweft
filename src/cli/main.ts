@@ -161,6 +161,7 @@ export async function runCli(
       if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < minimum) throw new Error(`Invalid ${label}`);
       return Number(value);
     };
+    let policyUntil: Date | undefined;
     // Validate before constructing the runtime or reading a proposal.
     switch (command) {
       case "mcp": only([], 1); break;
@@ -199,9 +200,9 @@ export async function runCli(
           if (!PROVIDERS.includes(values.provider as ProviderId)) throw new Error("Invalid --provider");
           required(values.root, "--root");
           if (!["analyze", "implement"].includes(values.intent ?? "")) throw new Error("Invalid --intent");
-          parsePolicyUntil(required(values.until, "--until"));
+          policyUntil = new Date(parsePolicyUntil(required(values.until, "--until")));
         }
-        else if (action === "revoke" || action === "grant") { only(action === "grant" ? ["until"] : [], 3); required(id, "policy/proposal ID"); if (values.until) parsePolicyUntil(values.until); }
+        else if (action === "revoke" || action === "grant") { only(action === "grant" ? ["until"] : [], 3); required(id, "policy/proposal ID"); if (values.until) policyUntil = new Date(parsePolicyUntil(values.until)); }
         else throw new Error("Expected policy list|revoke|grant");
         if (action === "grant" && (!io.stdin.isTTY || !io.stdout.isTTY)) return output(io, failure("tty_required", "policy grant requires stdin and stdout to be TTY; open a terminal and type yes manually"), json);
         break;
@@ -261,7 +262,7 @@ export async function runCli(
           status: p.revokedAt ? "revoked" : p.expiresAt && Date.parse(p.expiresAt) <= Date.now() ? "expired" : "active" })));
         else if (action === "revoke") envelope = success(await service.revokePolicy(id!));
         else {
-          const expiresAt = values.until ? parsePolicyUntil(values.until) : undefined;
+          const expiresAt = policyUntil?.toISOString();
           const proposal = id ? await service.getProposal(id) : await service.proposePolicy({ provider: values.provider as ProviderId, root: values.root!, intent: values.intent as Intent });
           if (!proposal) return output(io, failure("proposal_not_found", `Proposal not found: ${id}`), json);
           // With --json, stdout still contains exactly one Envelope; the trusted prompt is on stderr.
