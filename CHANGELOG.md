@@ -6,6 +6,16 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 
 ## [Unreleased]
 
+## [0.1.0-alpha.5] - 2026-11-18
+
+### Added
+
+- When magpie is installed, agy starts through `magpie agy run`, so it uses the model and settings chosen in magpie. `agyViaMagpie: false` or `executables.agy` runs agy directly; `turnweft doctor` shows the wrapper as `launcher` (U27). Both READMEs warn that agy through the magpie gateway may not remember earlier turns.
+
+### Changed
+
+- agy results report the model from agy's own init event, falling back to the requested model (U27).
+
 ## [0.1.0-alpha.4] - 2026-10-08
 
 ### Fixed
@@ -85,7 +95,8 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 - Background jobs with idempotent `requestId`, in-order execution per session, one writer per project, and `in_doubt` instead of automatic resends.
 - English and Chinese text for people (dialogs, CLI), selectable with `"language"` in `~/.turnweft/config.json`.
 
-[Unreleased]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.4...HEAD
+[Unreleased]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.5...HEAD
+[0.1.0-alpha.5]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.4...v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.1...v0.1.0-alpha.2

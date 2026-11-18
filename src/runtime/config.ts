@@ -14,6 +14,8 @@ export interface TurnweftConfig {
   ignoredParallelWrites?: Array<{ entry: unknown; reason: string }>;
   /** Absolute executable per provider; tools may not override this at call time (§11.1). */
   executables?: Partial<Record<ProviderId, string>>;
+  /** U27: start agy through `magpie agy run` when magpie is installed (default true); executables.agy also opts out. */
+  agyViaMagpie?: boolean;
   /** Idle release after this many ms for sessions with verified L2 (U13). */
   idleReleaseMs?: number;
   /** Fail a turn after this long with no provider activity (M0 §6: OpenCode swallows provider errors). */

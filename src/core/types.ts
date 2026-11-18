@@ -33,6 +33,8 @@ export interface ProbeResult {
   provider: ProviderId;
   available: boolean;
   executable?: string;
+  /** U27: wrapper that starts the executable with the same arguments, e.g. [magpie, "agy", "run"]. */
+  launcher?: string[];
   cliVersion?: string;
   adapterVersion: string;
   capabilities?: AgentCapabilities;

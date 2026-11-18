@@ -20,7 +20,8 @@ export class AgyConnection implements Connection {
 
   private effectiveSnapshot: Record<string, string> = {};
 
-  constructor(private exe: string, private cwd: string, private hooks: ConnectHooks = {}) {}
+  /** launcher: a wrapper that starts agy with the same arguments (U27: `magpie agy run`); exe stays the native agy, for PATH. */
+  constructor(private exe: string, private cwd: string, private hooks: ConnectHooks = {}, private launcher: string[] = []) {}
 
   currentEffective() { return { ...this.effectiveSnapshot }; }
 
@@ -40,7 +41,8 @@ export class AgyConnection implements Connection {
     if (input.effort !== undefined) { args.push("--effort", input.effort); this.launchEffort = input.effort; }
     if (input.nativeSessionId) args.push("--conversation", input.nativeSessionId);
     args.push("-p=");
-    this.proc = spawn(this.exe, args, { cwd: input.cwd, stdio: ["pipe", "pipe", "pipe"], detached: true, env: providerEnv(this.exe, undefined, undefined, "agy") });
+    const [command, ...prefix] = this.launcher.length ? this.launcher : [this.exe];
+    this.proc = spawn(command!, [...prefix, ...args], { cwd: input.cwd, stdio: ["pipe", "pipe", "pipe"], detached: true, env: providerEnv(this.exe, undefined, undefined, "agy") });
     if (this.proc.pid) this.hooks.onSpawn?.(this.proc.pid); // record before waiting for init (round 3, finding 4)
     this.proc.on("exit", (code, signal) => { this.hasExited = true; this.exitResolve({ code, signal }); this.waiter?.({ exited: { code, signal } }); });
     this.proc.on("error", () => { /* surfaced via exited */ });
@@ -77,13 +79,15 @@ export class AgyConnection implements Connection {
       // permission_mode is agy's own read-back (init event): "always-proceed" when prompts are skipped,
       // "request-review" otherwise. --mode is not echoed, so it is recorded only as a launch flag.
       effective: (this.effectiveSnapshot = { permission_mode: permissionMode, launch_flags: mode ?? "none" }),
-      model: { requested: input.model, effective: input.model },
+      // init echoes the model agy actually runs (with magpie, its routed model when none was requested).
+      model: { requested: input.model, effective: this.initModel ?? input.model },
       // agy's init event does not echo the level: effective is the launch flag, not a read-back.
       effort: { requested: input.effort, effective: input.effort },
     };
   }
 
   private initPermissionMode?: string;
+  private initModel?: string;
 
   private onData(chunk: string) {
     this.buf += chunk;
@@ -97,6 +101,7 @@ export class AgyConnection implements Connection {
       if (ev.event === "init") {
         this.conversationId = ev.conversation_id;
         this.initPermissionMode = ev.init?.permission_mode;
+        if (typeof ev.init?.model === "string" && ev.init.model) this.initModel = ev.init.model;
         this.initWaiter?.();
       } else if (ev.event === "step_update") {
         const s = ev.step_update ?? {};

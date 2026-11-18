@@ -52,6 +52,35 @@ export function resolveExecutable(provider: ProviderId, fallbacks = fallbackLoca
   return which(provider) ?? fallbacks.find(isExecutable);
 }
 
+/**
+ * U27: magpie (a local model gateway) starts agy through `magpie agy run <args>`, the same command its shell hook
+ * gives `agy`. It execs agy with its own settings, so the process, signals and stream are agy's. Checked on PATH,
+ * then in the app bundles and common install directories.
+ */
+export function magpieLocations(): string[] {
+  const home = homedir();
+  const bundle = join("magpie.app", "Contents", "MacOS", "magpie");
+  const onPath = (process.env.PATH ?? "").split(delimiter).filter(Boolean).map((dir) => join(dir, "magpie"));
+  return [...onPath, join("/Applications", bundle), join(home, "Applications", bundle), join(home, ".local", "bin", "magpie"), "/opt/homebrew/bin/magpie", "/usr/local/bin/magpie"];
+}
+
+/** How a provider is started: native exe (also used for PATH), plus a wrapper command when one launches it. */
+export interface Launch { exe: string; launcher: string[] }
+
+/**
+ * agy goes through magpie when magpie is present, unless the user configured executables.agy (run exactly that)
+ * or set agyViaMagpie: false. Native agy must still be found: magpie looks it up on PATH, which providerEnv
+ * builds from the native path. A failing magpie is reported, never silently replaced by native agy.
+ */
+export function resolveLaunch(provider: ProviderId, fallbacks = fallbackLocations(provider), magpie = magpieLocations()): Launch | undefined {
+  const exe = resolveExecutable(provider, fallbacks);
+  if (!exe) return undefined;
+  const config = loadConfig();
+  if (provider !== "agy" || config.executables?.agy || config.agyViaMagpie === false) return { exe, launcher: [] };
+  const wrapper = magpie.find(isExecutable);
+  return { exe, launcher: wrapper ? [wrapper, "agy", "run"] : [] };
+}
+
 function missingExecutable(provider: ProviderId): string {
   const configured = loadConfig().executables?.[provider];
   return configured
@@ -59,9 +88,10 @@ function missingExecutable(provider: ProviderId): string {
     : `${provider} executable not found (set executables.${provider} in ~/.turnweft/config.json)`;
 }
 
-function version(exe: string, provider: ProviderId): Promise<string | undefined> {
+function version({ exe, launcher }: Launch, provider: ProviderId): Promise<string | undefined> {
+  const [command, ...prefix] = launcher.length ? launcher : [exe];
   return new Promise((resolve) => {
-    execFile(exe, ["--version"], { timeout: 15000, env: providerEnv(exe, undefined, undefined, provider) }, (err, stdout) => {
+    execFile(command!, [...prefix, "--version"], { timeout: 15000, env: providerEnv(exe, undefined, undefined, provider) }, (err, stdout) => {
       if (err) return resolve(undefined);
       const m = redact(String(stdout)).match(/\d+\.\d+\.\d+(?:[-+.\w]*)?(?:\s*\([0-9a-f]+\))?/);
       resolve(m ? m[0] : redact(String(stdout)).trim().slice(0, 60));
@@ -210,20 +240,21 @@ function makeAdapter(def: ProfileDef): Adapter {
     adapterVersion: ADAPTER_VERSION,
     capabilities: def.capabilities,
     async probe(): Promise<ProbeResult> {
-      const exe = resolveExecutable(def.provider);
+      const launch = resolveLaunch(def.provider);
       const base = { provider: def.provider, adapterVersion: ADAPTER_VERSION, probedAt: new Date().toISOString() };
-      if (!exe) return { ...base, available: false, problems: [missingExecutable(def.provider)] };
-      const v = await version(exe, def.provider);
+      if (!launch) return { ...base, available: false, problems: [missingExecutable(def.provider)] };
+      const { exe, launcher } = launch;
+      const v = await version(launch, def.provider);
       const problems: string[] = [];
-      if (!v) problems.push(providerError("could not read --version", def.provider));
+      if (!v) problems.push(providerError(launcher.length ? `could not read --version through ${launcher.join(" ")} (set agyViaMagpie: false in ~/.turnweft/config.json to run agy directly)` : "could not read --version", def.provider));
       if (def.provider === "grok") problems.push(`grok permission_mode=${grokPermissionMode()} (from ~/.grok/config.toml)`);
-      return { ...base, available: Boolean(v), executable: exe, cliVersion: v, capabilities: def.capabilities, problems };
+      return { ...base, available: Boolean(v), executable: exe, ...(launcher.length ? { launcher } : {}), cliVersion: v, capabilities: def.capabilities, problems };
     },
     tierFor: (intent) => def.tierFor(intent),
     connect(cwd: string, hooks?: ConnectHooks): Connection {
-      const exe = resolveExecutable(def.provider);
-      if (!exe) throw new Error(missingExecutable(def.provider));
-      return def.acp ? new AcpConnection({ ...def.acp(exe), provider: def.provider }, cwd, hooks) : new AgyConnection(exe, cwd, hooks);
+      const launch = resolveLaunch(def.provider);
+      if (!launch) throw new Error(missingExecutable(def.provider));
+      return def.acp ? new AcpConnection({ ...def.acp(launch.exe), provider: def.provider }, cwd, hooks) : new AgyConnection(launch.exe, cwd, hooks, launch.launcher);
     },
   };
 }

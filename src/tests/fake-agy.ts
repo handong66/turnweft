@@ -3,6 +3,8 @@
 import { createInterface } from "node:readline";
 
 const args = process.argv.slice(2);
+if (args.includes("--version")) { process.stdout.write("1.5.11-fake\n"); process.exit(0); }
+const model = args.includes("--model") ? args[args.indexOf("--model") + 1] : undefined;
 const at = args.indexOf("--effort");
 const effort = at >= 0 ? args[at + 1] : undefined;
 if (effort !== undefined && !["low", "medium", "high", "xhigh", "max"].includes(effort)) {
@@ -10,7 +12,7 @@ if (effort !== undefined && !["low", "medium", "high", "xhigh", "max"].includes(
   process.exit(1);
 }
 const conversation = args.includes("--conversation") ? args[args.indexOf("--conversation") + 1] : "agy-new-conv";
-process.stdout.write(`${JSON.stringify({ event: "init", conversation_id: conversation, init: { permission_mode: "request-review" } })}\n`);
+process.stdout.write(`${JSON.stringify({ event: "init", conversation_id: conversation, init: { permission_mode: "request-review", ...(model ? { model } : {}) } })}\n`);
 createInterface({ input: process.stdin }).on("line", line => {
   const prompt = JSON.parse(line).message.content[0].text;
   if (prompt.startsWith("denied:")) {
