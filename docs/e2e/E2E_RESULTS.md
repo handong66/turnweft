@@ -181,7 +181,8 @@ U24–U26 均经 Droid 与 agy 两席只读评审（GO）。
 - 自动化：`magpie.test.ts` 用脚本替身（magpie 替身只在 PATH 上查找 agy 并 exec）覆盖：有 magpie 时走 `magpie agy run`；`executables.agy`、`agyViaMagpie: false`、其他 provider 保持原生；只有 magpie、没有原生 agy 时不可用；最小 PATH 下仍能经 magpie 找到原生 agy；init 回报的模型写入 `model.effective`，显式模型优先；probe 经 magpie 读版本并给出 `launcher`。全量 `npm test` 203 项通过，privacy-scan clean。
 - 进程语义（真实 magpie）：Node `spawn(magpie, ["agy","run",…], {detached:true})` 后同一 PID 的命令行即 agy，无提前 exit，init 仍报告 `request-review`，进程组 SIGTERM 正常退出。magpie 会把自己的 `--settings` 与 `--model` 加在参数前，Turnweft 传入的 `--model` 仍生效。
 - 真实冒烟（`live-smoke.mjs agy`，临时 TURNWEFT_HOME，无 `providerEnv`、不指定模型）：会话版本 1.5.11；implement 成功、测试通过、`permission_mode=always-proceed`；`model.effective` 为 magpie 选定的模型；挂起后恢复原生会话 ID 不变；取消 392 ms。
-- **未通过：多轮记忆。** 冒烟中 L1／L2 回忆 token 两次都答错。不经 Turnweft 直接运行两轮对话：`magpie agy run`（两个模型）答错；原生 agy 加网关环境变量和 magpie 的 settings 文件（不经 magpie 程序）也答错，几次都答出同一个错误 token；原生 agy 自身两次都答对。问题出在 magpie 网关这一层，U27 之前就存在，与启动方式无关。旧的 `providerEnv` 路径（只设环境变量、不带 magpie settings）现在会因不认 magpie 模型而无法启动。magpie 修复前，经 magpie 的 agy 会话不能依赖前几轮上下文；需要多轮时设 `agyViaMagpie: false`。
+- **多轮记忆：通过（更正）。** 首次冒烟 L1／L2 回忆 `TW-xxxxxx` 形式的 token 两次都答错，当时误判为 magpie 网关丢上下文，并写进了 alpha.5 的 README 警告。复查：经 magpie 的两轮请求落在同一账号，第二轮读到约 1 万 token 缓存，历史确已送达；改用普通内容（宠物名和年龄、暗号单词）时经 magpie 两轮均答对；只有类 token 字符串答错，且不同模型、多次运行都答出同一个错误值，magpie 请求日志带脱敏耗时字段。结论是 magpie 脱敏把类密钥字符串换成了占位值，多轮上下文正常。冒烟脚本改为回忆普通暗号单词，经 magpie 重跑结果见下一条。旧的 `providerEnv` 路径（只设环境变量、不带 magpie settings）现在会因不认 magpie 模型而无法启动。
+- 更正后重跑冒烟（回忆普通暗号单词，经 magpie，不指定模型）：implement 成功、测试通过；L1 回忆正确；挂起后 L2 回忆正确，原生会话 ID 不变；取消 465 ms。
 - `turnweft doctor --refresh` 的 agy 项含 `launcher`；保留旧 `providerEnv.agy` 时经 magpie 正常启动，init 报告 `request-review` 与 magpie 模型。
 
 ## 4. 插件启动器

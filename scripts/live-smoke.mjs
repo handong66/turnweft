@@ -50,22 +50,25 @@ async function turn(sessionId, intent, prompt) {
   }
 }
 
-const token = "TW-" + randomBytes(3).toString("hex").toUpperCase();
+// A plain code word: gateways that mask secret-looking strings (e.g. magpie) would replace a hex token.
+const WORDS = ["copper", "heron", "maple", "lantern", "orchid", "falcon", "harbor", "pepper", "violet", "walnut", "comet", "meadow", "otter", "saffron", "thistle", "willow"];
+const pick = () => WORDS[randomBytes(1)[0] % WORDS.length];
+const token = `${pick()}-${pick()}-${pick()}`;
 const s = await svc.createSession({ provider, cwd: proj, host, model, effort });
 log("session", { id: s.id, cliVersion: s.cliVersion });
 
-let v = await turn(s.id, "implement", `Remember this token: ${token}. Fix the bugs in src/math.js so that the tests in test/math.test.js pass (run them with: node --test test/math.test.js). Reply in two sentences.`);
+let v = await turn(s.id, "implement", `Remember this code word: ${token}. Fix the bugs in src/math.js so that the tests in test/math.test.js pass (run them with: node --test test/math.test.js). Reply in two sentences.`);
 const tests = (() => { try { execFileSync("node", ["--test", "test/math.test.js"], { cwd: proj, stdio: "pipe" }); return "pass"; } catch { return "fail"; } })();
 log("implement", { state: v.job.state, err: v.job.errorCode, reason: v.job.failureReason, files: v.result?.files, tests, perm: v.result?.permission && { mode: v.result.permission.effectiveMode, answered: v.result.permission.answeredRequests.length }, model: v.result?.model, effort: v.result?.effort, text: v.result?.finalText?.slice(-200) });
 
-v = await turn(s.id, "analyze", "What token did I ask you to remember? Reply with the token only.");
+v = await turn(s.id, "analyze", "What code word did I ask you to remember? Reply with the code word only.");
 log("recall_L1", { state: v.job.state, text: v.result?.finalText?.trim().slice(-60), ok: v.result?.finalText?.includes(token) });
 
 const native = (await svc.getSession(s.id)).nativeSessionId;
 for (let i = 0; i < 60 && (await svc.getSession(s.id)).state !== "suspended"; i++) await new Promise((r) => setTimeout(r, 1000));
 log("suspended", { state: (await svc.getSession(s.id)).state });
 
-v = await turn(s.id, "analyze", "What token did I ask you to remember earlier in this conversation? Reply with the token only.");
+v = await turn(s.id, "analyze", "What code word did I ask you to remember earlier in this conversation? Reply with the code word only.");
 log("recall_L2", { state: v.job.state, err: v.job.errorCode, text: v.result?.finalText?.trim().slice(-60), ok: v.result?.finalText?.includes(token), sameNative: (await svc.getSession(s.id)).nativeSessionId === native });
 
 const r = await svc.submitTurn({ sessionId: s.id, intent: "implement", prompt: "Run the shell command `sleep 60 && echo slept` and tell me what it printed.", requestId: `live-${randomBytes(6).toString("hex")}`, host });

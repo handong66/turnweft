@@ -6,6 +6,12 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 
 ## [Unreleased]
 
+## [0.1.0-alpha.6] - 2026-11-18
+
+### Fixed
+
+- Corrected the 0.1.0-alpha.5 README warning: agy through magpie keeps multi-turn context. The failed recall came from magpie masking a secret-looking test token; the READMEs now describe that masking instead. The live smoke test recalls a plain code word so masking cannot skew it.
+
 ## [0.1.0-alpha.5] - 2026-11-18
 
 ### Added
@@ -95,7 +101,8 @@ Every change that affects users adds an entry under **Unreleased**. `npm version
 - Background jobs with idempotent `requestId`, in-order execution per session, one writer per project, and `in_doubt` instead of automatic resends.
 - English and Chinese text for people (dialogs, CLI), selectable with `"language"` in `~/.turnweft/config.json`.
 
-[Unreleased]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.5...HEAD
+[Unreleased]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.6...HEAD
+[0.1.0-alpha.6]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.5...v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.4...v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/handong66/turnweft/compare/v0.1.0-alpha.2...v0.1.0-alpha.3

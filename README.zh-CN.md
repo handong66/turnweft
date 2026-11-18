@@ -228,7 +228,7 @@ Agent 的模式超出你的授权时，任务先记为 `waiting_confirmation`（
   - 仍需装好 agy 本身；Turnweft 会把 agy 所在目录放在 magpie 看到的 `PATH` 首位。
   - `turnweft doctor` 用 `launcher` 字段显示这层包装，结果里的模型是 agy 自己报告的实际模型。
   - 设为 `false` 或设置 `executables.agy` 即直接运行 agy。magpie 出错时如实报错，不会退回直接运行 agy。
-  - 注意：经 magpie 的 agy 可能记不住前几轮，见“已知限制”。
+  - 注意：magpie 可能遮蔽类密钥文本，见“已知限制”。
 - **`confirmationMode`**：`"wait"`（默认）或 `"fail-fast"`。长时间或无人值守任务可用 fail-fast，或在 MCP ask/delegate 传 `nonInteractive: true`，在 `turnweft send` 加 `--non-interactive`。true 一律不等待；false／省略沿用配置，不能强制覆盖 fail-fast。缺少授权时返回 `needs_confirmation`，包含 provider、项目、intent、tier、超出能力列表和准确的 `grantCommand`；不弹窗、不发 elicitation、不创建任务或队列项、不发送 provider。提案保留至多 24 小时。宿主将任务标记为受阻，继续独立工作，最后汇报；不得擅自降级 intent 或改走 CLI。用户确认后用同一个 requestId 重试。原有 wait 模式任务仍保留队列位置，直到确认、取消或过期；改配置不会取消它们。
 - **`providerEnv`**：provider ID 到字符串环境变量表的映射，覆盖该 provider 继承的变量。特别是 `PATH` 会完全替换继承的 PATH，必须写全所需搜索路径；Turnweft 仍将 provider 可执行文件目录放在首位，并在缺少时追加自身 Node 目录。示例变量名仅作说明，应使用 provider 实际要求的名称。GUI 启动的 MCP 缺 API key、base URL 时由用户设置此项，无需 CLI fallback。每次 probe 或启动 provider 进程读取，包括已运行 worker 的后续启动；已有 provider 进程须重新打开才使用新环境。Agent 列表 probe 可能缓存 60 秒，可用 `agents list --refresh` 刷新。环境本身不写入记录。长度至少 8 个字符的回显值会在结果、事件和输出中遮蔽；更短的值不注册脱敏，避免 `1`、`true` 等开关值破坏普通输出。这只是长度启发式，不是密钥识别，也不改变传给 provider 的值。脱敏按配置文件修改时间和大小缓存，任一变化时刷新；仅来自配置的已移除值在刷新后停止遮蔽，provider 启动时捕获的值则在该 Turnweft 进程生命周期内持续遮蔽，以保护仍使用旧环境的 provider 输出。只有用户能编辑此文件，Agent 绝不能代改；工具参数和项目文件不能设置。
 - **`parallelWrites`** 是绝对项目目录数组，仅接受用户配置文件。路径先解析符号链接并规范化，再与会话 canonical root 精确匹配；不会递归匹配其他 canonical root（含嵌套 worktree）。同一 Git 根目录下的子目录会话共用该根目录的设置。相对路径、非字符串、不存在或非目录的条目被忽略，`turnweft doctor` 会逐项列出原因。不能通过 MCP 参数、任务 CLI 标志或项目文件设置。每次尝试取锁都重新读取配置：已运行任务保留原共享／独占锁直到释放；独占任务等所有持有者退出，共享任务等独占持有者退出。
@@ -281,7 +281,7 @@ turnweft session close tws_…
 - OpenCode 的 ACP 不回传 provider 错误（例如额度用尽），Turnweft 只能靠无活动超时发现。
 - 显式指定 Dim 的模型会永久改变该工作区的默认模型，结果里会说明。
 - agy 不回报思考强度，结果里显示的是启动时传入的值。
-- **经 magpie 的 agy 可能记不住前几轮。** 实测中，经 magpie 网关的 agy 回答后续问题时拿不到前几轮的上下文，直接运行的 agy 则能记住。问题在 magpie 一侧，与 Turnweft 启动 agy 的方式无关。修复前不要依赖经 magpie 启动的 agy 会话中的前几轮内容；需要多轮协作时设 `agyViaMagpie: false`。
+- **magpie 可能遮蔽发给 agy 的类密钥文本。** magpie 开启脱敏时，提示词里看起来像密钥或 token 的字符串可能以占位值送达模型，agy 因此无法原样复述。多轮上下文本身会保留。任务需要原样使用这类字符串时设 `agyViaMagpie: false`。
 - Claude Code 和 Codex 是宿主，不是委派对象：Turnweft 不会把工作交给它们。
 
 ## 卸载
