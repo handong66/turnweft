@@ -10,7 +10,7 @@
 
 支持的 Agent：**Dim、Droid、Grok、OpenCode、agy**。
 
-> 状态：`0.1.0-alpha`，只支持 macOS。五个 Agent 在 Claude Code 和 Codex 中都已经端到端跑通，但难免还有粗糙的地方。版本改动见 [CHANGELOG.md](CHANGELOG.md)。
+> 状态：`0.1.0-alpha.6`，只支持 macOS。五个 Agent 在 Claude Code 和 Codex 中都已经端到端跑通，但难免还有粗糙的地方。版本改动见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 

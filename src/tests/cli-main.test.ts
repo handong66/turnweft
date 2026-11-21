@@ -251,13 +251,16 @@ test("Chinese CLI help and confirmation output use the message catalog", async (
   } finally { process.env.TURNWEFT_LANG = "en"; }
 });
 
-test("plugin manifests carry the package version", async () => {
+test("plugin manifests and README status lines carry the package version", async () => {
   const { readFileSync } = await import("node:fs");
   const { fileURLToPath } = await import("node:url");
   const root = fileURLToPath(new URL("../../", import.meta.url));
   const version = JSON.parse(readFileSync(`${root}package.json`, "utf8")).version;
   for (const rel of ["plugins/claude-code/.claude-plugin/plugin.json", "plugins/codex/.codex-plugin/plugin.json"]) {
     assert.equal(JSON.parse(readFileSync(`${root}${rel}`, "utf8")).version, version, `${rel} (run npm version, or node scripts/sync-version.mjs)`);
+  }
+  for (const [rel, prefix] of [["README.md", "> Status: `"], ["README.zh-CN.md", "> 状态：`"]]) {
+    assert.ok(readFileSync(`${root}${rel}`, "utf8").includes(`${prefix}${version}\``), `${rel} status line (run npm version, or node scripts/sync-version.mjs)`);
   }
 });
 

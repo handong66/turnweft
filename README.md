@@ -10,7 +10,7 @@ You talk to Claude Code or Codex as usual. When you want a second opinion, a par
 
 Supported agents: **Dim, Droid, Grok, OpenCode and agy**.
 
-> Status: `0.1.0-alpha`, macOS only. It works end to end with all five agents in both Claude Code and Codex, but expect rough edges. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+> Status: `0.1.0-alpha.6`, macOS only. It works end to end with all five agents in both Claude Code and Codex, but expect rough edges. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
